@@ -64,32 +64,83 @@ class BasePolicy(ABC):
 
 
 class MyPolicy(BasePolicy):
-    """自分のポリシーをここに実装する。
-
-    例: チェックポイントをロードして推論する場合
-        def __init__(self):
-            self.model = torch.load("model_weights/checkpoint.pth")
-            self.model.eval()
-
-        def get_action(self, obs):
-            image = obs["agentview_image"]
-            # ... 前処理・推論 ...
-            return action
-    """
+    """Pretrained SmolVLA policy for LIBERO-plus."""
 
     def __init__(self):
-        # TODO: モデルのロード
-        pass
+        import torch
+        from lerobot.configs.policies import PreTrainedConfig
+        from lerobot.policies.factory import make_pre_post_processors
+        from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+
+        self._torch = torch
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.checkpoint = "lerobot/smolvla_libero_plus"
+
+        config = PreTrainedConfig.from_pretrained(self.checkpoint)
+        config.device = str(self.device)
+        self.policy = SmolVLAPolicy.from_pretrained(self.checkpoint, config=config)
+        self.policy.eval()
+
+        self.preprocessor, self.postprocessor = make_pre_post_processors(
+            policy_cfg=config,
+            pretrained_path=self.checkpoint,
+            preprocessor_overrides={
+                "device_processor": {"device": str(self.device)},
+            },
+        )
+        self.instruction = ""
 
     def get_action(self, obs: dict[str, np.ndarray]) -> np.ndarray:
-        # TODO: 推論処理を実装
-        # 以下はランダムポリシー（動作確認用）
-        return np.random.uniform(-1, 1, size=7).astype(np.float32)
+        from scipy.spatial.transform import Rotation
+
+        torch = self._torch
+
+        def image_tensor(image: np.ndarray):
+            return (
+                torch.from_numpy(image)
+                .permute(2, 0, 1)
+                .contiguous()
+                .to(dtype=torch.float32)
+                .div_(255.0)
+            )
+
+        # State layout (8-dim): the checkpoint's config.json claims shape (6,), but
+        # the actual saved normalizer stats (policy_preprocessor_step_5_normalizer_
+        # processor.safetensors) are (8,) with value ranges that match eef_pos(3)
+        # + eef_euler_xyz(3, spanning ~[-pi, pi]) + gripper_qpos(2, near-symmetric
+        # +/- pair) -- confirmed empirically against those stats, not from docs.
+        state = np.concatenate(
+            [
+                np.asarray(obs["robot0_eef_pos"], dtype=np.float32),
+                Rotation.from_quat(obs["robot0_eef_quat"]).as_euler("xyz").astype(np.float32),
+                np.asarray(obs["robot0_gripper_qpos"], dtype=np.float32),
+            ]
+        )
+
+        batch = {
+            "observation.state": torch.from_numpy(state),
+            "observation.images.camera1": image_tensor(obs["agentview_image"]),
+            "observation.images.camera2": image_tensor(obs["robot0_eye_in_hand_image"]),
+            "observation.images.camera3": torch.zeros((3, 256, 256), dtype=torch.float32),
+            "observation.images.empty_camera_0": torch.zeros(
+                (3, 480, 640), dtype=torch.float32
+            ),
+            "observation.images.empty_camera_1": torch.zeros(
+                (3, 480, 640), dtype=torch.float32
+            ),
+            "task": self.instruction,
+        }
+        batch = self.preprocessor(batch)
+
+        with torch.inference_mode():
+            action = self.policy.select_action(batch)
+            action = self.postprocessor(action)
+
+        return action.squeeze(0).detach().cpu().numpy().astype(np.float32, copy=False)
 
     def reset(self, instruction: str = "") -> None:
-        # TODO: 内部状態のリセット（action chunking のキャッシュ等）
-        # instruction にはタスクの言語指示が渡される
         self.instruction = instruction
+        self.policy.reset()
 
 
 # ============================================================

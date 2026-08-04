@@ -8,3 +8,5 @@ numpy>=1.19
 # 例:
 # torch>=2.0
 # transformers>=4.30
+lerobot[smolvla]==0.4.4
+scipy==1.15.3
