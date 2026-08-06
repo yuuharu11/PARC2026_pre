@@ -3,4 +3,7 @@ __pycache__/
 results/
 venv/
 LIBERO-plus/
+LIBERO/
+env.sh
 assets.zip
+*_smoketest*/

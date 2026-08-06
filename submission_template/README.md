@@ -71,3 +71,10 @@ unzip 直後に同一の検査を実施する。
   そのトラック全体が 0 点となる（詳細はリポジトリ直下の [README.md](../README.md) の
   「タイムアウト仕様」を参照すること）
 - `reset()` はエピソードごとに呼び出される。内部状態（action chunking のキャッシュ等）をクリアすること
+
+> **SmolVLA 実装上の仮定:** pretrained checkpoint の config.json は state shape を (6,) と
+> 記載しているが、実際に保存されている正規化統計量（policy_preprocessor の
+> normalizer safetensors）は (8,) であり、値のレンジから `eef_pos(3) + eef_euler_xyz(3)
+> + gripper_qpos(2)` と推定して実装している（config.json の記載が誤り、または stale）。
+> 統計量の傾向から妥当性は高いと考えられるが、公式ドキュメントによる確証はないため
+> 実際の成功率で要検証。
