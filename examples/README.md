@@ -4,6 +4,7 @@
 |---|---|
 | [smolvla_libero_spatial_lora.ipynb](smolvla_libero_spatial_lora.ipynb) | SmolVLA を LIBERO-plus Spatial で LoRA 追加学習する Google Colab ノートブック |
 | [smolvla_libero_spatial_lora_local.py](smolvla_libero_spatial_lora_local.py) | 上記ノートブックをローカル GPU 機（Colab 不使用）で再現するスクリプト |
+| [smolvla_libero_plus_multisuite_lora_local.py](smolvla_libero_plus_multisuite_lora_local.py) | SmolVLA を LIBERO-plus Spatial・Object・Goal の全 40 タスクで LoRA 追加学習するローカル GPU 用スクリプト |
 
 ## smolvla_libero_spatial_lora.ipynb
 
