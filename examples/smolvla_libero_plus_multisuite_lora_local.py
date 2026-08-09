@@ -2,11 +2,15 @@
 Local SmolVLA LoRA training across all 40 LIBERO-plus training tasks.
 
 This script extends the local port of examples/smolvla_libero_spatial_lora.ipynb
-from the 10 Spatial tasks to all 40 available Spatial/Object/Goal task
-instructions. It selects an equal number of evenly spaced episodes per task,
-then retains the notebook's Spatial-only before/after evaluation for a quick
-comparison. Colab-only operations and bare-venv compatibility fixes from
-smolvla_libero_spatial_lora_local.py are preserved; see examples/README.md.
+from the 10 Spatial tasks to all 40 available Spatial/Object/Goal/libero_10
+task instructions. It selects an equal number of evenly spaced episodes per
+task, then evaluates before/after performance across all four suites by
+matching the 40 trained task names to a representative perturbation-variant
+task ID in their actual suite (each suite's task list is hundreds of
+perturbation variants per base instruction, not distinct instructions -- see
+the comment above CATEGORY_PREFERENCE). Colab-only operations and bare-venv
+compatibility fixes from smolvla_libero_spatial_lora_local.py are preserved;
+see examples/README.md.
 
 Requires: a Python 3.12 venv with torch==2.9.1+cu126,
 torchvision==0.24.1+cu126, torchcodec==0.9.1, and mujoco==3.7.0
@@ -248,7 +252,17 @@ TASK_NAMES = [
     "turn on the stove and put the moka pot on it",
 ]
 
-TRAIN_EPISODES_PER_TASK = 8
+# Track 1 public tasks are the primary optimization target.  Keep broad
+# coverage for hidden-task generalization, but expose the four relevant base
+# skills substantially more often than the other 36 instructions.
+TRAIN_EPISODES_PER_TASK = 4
+TARGET_EPISODES_PER_TASK = 24
+TRACK1_TARGET_TASKS = {
+    "pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate",
+    "pick up the tomato sauce and place it in the basket",
+    "pick up the milk and place it in the basket",
+    "put the bowl on the stove",
+}
 
 STEPS = 8000
 LOG_FREQ = 100
@@ -260,18 +274,29 @@ LORA_R = 16
 LORA_ALPHA = 16
 SEED = 42
 
-EVAL_TASK_IDS = list(range(10))
 EVAL_EPISODES_PER_TASK = 3
 EVAL_SEED = 2026
+EVAL_OBSERVATION_SIZE = 128
 
-OUTPUT_DIR = Path("/content/outputs/smolvla_libero_plus_multisuite_lora")
-MERGED_MODEL_DIR = Path("/content/smolvla_libero_plus_multisuite_lora_merged")
-BASELINE_MODEL_DIR = Path("/content/smolvla_libero_plus_multisuite_baseline")
+# Exact public Track 1 variants from compe/t1/T1_TASKS.csv.  Evaluation on a
+# merely representative variant hid the actual objective (which was 0/32).
+TRACK1_PUBLIC_EVAL_TASKS = {
+    "pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate": (
+        "libero_spatial", 80
+    ),
+    "pick up the tomato sauce and place it in the basket": ("libero_object", 241),
+    "pick up the milk and place it in the basket": ("libero_object", 2408),
+    "put the bowl on the stove": ("libero_goal", 2467),
+}
 
-BASE_EVAL_DIR = Path("/content/eval/multisuite_base")
-FINETUNED_EVAL_DIR = Path("/content/eval/multisuite_lora")
-COMPARISON_CSV_PATH = Path("/content/libero_spatial_multisuite_lora_comparison.csv")
-MERGED_ZIP_PATH = Path("/content/smolvla_libero_plus_multisuite_lora_merged.zip")
+OUTPUT_DIR = Path("/content/outputs/smolvla_libero_plus_track1_focused_lora")
+MERGED_MODEL_DIR = Path("/content/smolvla_libero_plus_track1_focused_lora_merged")
+BASELINE_MODEL_DIR = Path("/content/smolvla_libero_plus_track1_focused_baseline")
+
+BASE_EVAL_DIR = Path("/content/eval/track1_focused_base")
+FINETUNED_EVAL_DIR = Path("/content/eval/track1_focused_lora")
+COMPARISON_CSV_PATH = Path("/content/track1_focused_lora_comparison.csv")
+MERGED_ZIP_PATH = Path("/content/smolvla_libero_plus_track1_focused_lora_merged.zip")
 
 MIXED_PRECISION = "bf16" if torch.cuda.is_bf16_supported() else "fp16"
 
@@ -403,19 +428,31 @@ for task_name in TASK_NAMES:
     if actual_task is None:
         raise RuntimeError(f"Training task not found: {task_name}")
 
-    selected_by_task[actual_task] = choose_evenly_spaced(task_to_episodes[actual_task], TRAIN_EPISODES_PER_TASK)
+    episode_count = (
+        TARGET_EPISODES_PER_TASK if task_name in TRACK1_TARGET_TASKS else TRAIN_EPISODES_PER_TASK
+    )
+    available_episodes = task_to_episodes[actual_task]
+    if len(available_episodes) < episode_count:
+        raise RuntimeError(
+            f"Not enough episodes for {task_name}: requested {episode_count}, "
+            f"available {len(available_episodes)}"
+        )
+    selected_by_task[actual_task] = choose_evenly_spaced(available_episodes, episode_count)
 
 EPISODE_INDICES = sorted(
     episode_index for episode_indices in selected_by_task.values() for episode_index in episode_indices
 )
 
-expected_episode_count = len(TASK_NAMES) * TRAIN_EPISODES_PER_TASK
+expected_episode_count = (
+    (len(TASK_NAMES) - len(TRACK1_TARGET_TASKS)) * TRAIN_EPISODES_PER_TASK
+    + len(TRACK1_TARGET_TASKS) * TARGET_EPISODES_PER_TASK
+)
 if len(EPISODE_INDICES) != expected_episode_count:
     raise RuntimeError("Episode selection failed.")
 
 print(
-    f"Training data: {len(TASK_NAMES)} tasks x {TRAIN_EPISODES_PER_TASK} episodes "
-    f"= {expected_episode_count} episodes"
+    f"Training data: {len(TASK_NAMES)} tasks, {len(TRACK1_TARGET_TASKS)} Track 1 targets "
+    f"oversampled to {TARGET_EPISODES_PER_TASK} episodes = {expected_episode_count} episodes"
 )
 
 # ---------------------------------------------------------------------------
@@ -453,7 +490,7 @@ from collections import deque
 episodes_json = "[" + ",".join(map(str, EPISODE_INDICES)) + "]"
 
 command = [
-    "lerobot-train",
+    str(Path(sys.executable).parent / "lerobot-train"),
     f"--policy.path={BASE_MODEL_LOCAL}",
     f"--policy.vlm_model_name={VLM_REPO}",
     "--policy.push_to_hub=false",
@@ -470,6 +507,12 @@ command = [
     f"--dataset.repo_id={DATASET_REPO}",
     f"--dataset.revision={DATASET_REVISION}",
     f"--dataset.episodes={episodes_json}",
+    # Track 1 changes illumination and background materials.  LeRobot's
+    # built-in transforms cover brightness/contrast/saturation/hue/sharpness
+    # and small affine shifts while preserving the action labels.
+    "--dataset.image_transforms.enable=true",
+    "--dataset.image_transforms.max_num_transforms=4",
+    "--dataset.image_transforms.random_order=true",
     "--dataset.use_imagenet_stats=false",
     "--dataset.video_backend=torchcodec",
     f"--output_dir={OUTPUT_DIR}",
@@ -839,10 +882,112 @@ if LIBERO_PLUS_DIR.resolve() not in benchmark_path.parents:
 
 print("LIBERO-plus ready.")
 
+LIBERO_PLUS_TASK_CLASSIFICATION = _json.loads(
+    (LIBERO_PLUS_PACKAGE_ROOT / "benchmark" / "task_classification.json").read_text(encoding="utf-8")
+)
+
+# Each LIBERO-plus suite's ~2400-2600 "tasks" are NOT distinct instructions --
+# they are dozens/hundreds of perturbation *variants* of the 40 base
+# instructions above (language "<base instruction> table 1", "<base
+# instruction> table 10", ...; category comes from task_classification.json,
+# which is index-aligned 1:1 with the benchmark's own task order -- verified
+# separately by diffing task.name against task_classification.json[suite][i]
+# ["name"] for every task in every suite: zero mismatches). The 40 base
+# instructions are also not confined to libero_spatial/object/goal -- 10 of
+# them (the multi-step/long-horizon ones, e.g. "put both moka pots on the
+# stove") only exist in the libero_10 suite. CATEGORY_PREFERENCE biases the
+# single representative variant picked per base instruction toward the
+# perturbation categories Track1 actually grades on
+# (compe/t1/T1_TASKS.csv uses "Background Textures" and "Light Conditions").
+CATEGORY_PREFERENCE = ["Background Textures", "Light Conditions"]
+
+EVAL_SUITE_NAMES = ("libero_spatial", "libero_object", "libero_goal", "libero_10")
+normalized_base_names = {normalize_task_name(name): name for name in TASK_NAMES}
+matches_by_base_name: dict[str, list[tuple[str, int, str]]] = {name: [] for name in TASK_NAMES}
+
+for suite_name in EVAL_SUITE_NAMES:
+    task_suite = benchmark.get_benchmark_dict()[suite_name]()
+    categories = [entry["category"] for entry in LIBERO_PLUS_TASK_CLASSIFICATION[suite_name]]
+    if len(categories) != task_suite.n_tasks:
+        raise RuntimeError(f"task_classification.json length mismatch for {suite_name}")
+
+    for task_id in range(task_suite.n_tasks):
+        # "Language Instructions" variants deliberately reword the instruction
+        # (e.g. "turn on the stove and set the moka pot on it but don't
+        # forget..."), so substring-matching them against the original text
+        # is unreliable/accidental (a reworded moka-pot variant can spuriously
+        # prefix-match the unrelated, shorter "turn on the stove" base
+        # instruction). Since these aren't in CATEGORY_PREFERENCE anyway, skip
+        # collecting them as match candidates entirely.
+        if categories[task_id] == "Language Instructions":
+            continue
+
+        task = task_suite.get_task(task_id)
+        normalized_lang = normalize_task_name(str(task.language))
+
+        # Some base instructions are textual prefixes of others (e.g. "turn on
+        # the stove" vs. "turn on the stove and put the moka pot on it"), so
+        # take the *longest* matching base name rather than treating this as
+        # an ambiguity error.
+        matched_base = None
+        for norm_base, base_name in normalized_base_names.items():
+            if normalized_lang == norm_base or normalized_lang.startswith(norm_base + " "):
+                if matched_base is None or len(norm_base) > len(normalize_task_name(matched_base)):
+                    matched_base = base_name
+
+        if matched_base is not None:
+            matches_by_base_name[matched_base].append((suite_name, task_id, categories[task_id]))
+
+unmatched_eval_tasks = [name for name, matches in matches_by_base_name.items() if not matches]
+cross_suite_eval_tasks = {
+    name: matches
+    for name, matches in matches_by_base_name.items()
+    if len({suite for suite, _, _ in matches}) > 1
+}
+
+if unmatched_eval_tasks or cross_suite_eval_tasks:
+    details = []
+    if unmatched_eval_tasks:
+        details.append("unmatched=" + repr(unmatched_eval_tasks))
+    if cross_suite_eval_tasks:
+        details.append("cross_suite=" + repr(list(cross_suite_eval_tasks)))
+    raise RuntimeError("Eval task matching failed: " + "; ".join(details))
+
+
+def pick_representative_eval_task(matches: list[tuple[str, int, str]]) -> tuple[str, int, str]:
+    def sort_key(match: tuple[str, int, str]) -> tuple[int, int]:
+        _, task_id, category = match
+        preference = (
+            CATEGORY_PREFERENCE.index(category) if category in CATEGORY_PREFERENCE else len(CATEGORY_PREFERENCE)
+        )
+        return (preference, task_id)
+
+    return sorted(matches, key=sort_key)[0]
+
+
+EVAL_TASKS_BY_SUITE: dict[str, list[tuple[int, str]]] = {suite_name: [] for suite_name in EVAL_SUITE_NAMES}
+EVAL_TASK_LABELS: dict[tuple[str, int], str] = {}
+
+for base_name, (suite_name, task_id) in TRACK1_PUBLIC_EVAL_TASKS.items():
+    matches = matches_by_base_name[base_name]
+    if not any(match_suite == suite_name and match_id == task_id for match_suite, match_id, _ in matches):
+        raise RuntimeError(
+            f"Track 1 public task mapping is stale: {base_name!r} -> ({suite_name!r}, {task_id})"
+        )
+    EVAL_TASKS_BY_SUITE[suite_name].append((task_id, base_name))
+    EVAL_TASK_LABELS[(suite_name, task_id)] = base_name
+
+print(
+    "Track 1 public eval tasks matched: "
+    + ", ".join(
+        f"{suite_name}={len(EVAL_TASKS_BY_SUITE[suite_name])}" for suite_name in EVAL_SUITE_NAMES
+    )
+)
+
 # ---------------------------------------------------------------------------
 # 12. Evaluate before/after
 # ---------------------------------------------------------------------------
-phase("12. Evaluate base vs. multisuite LoRA on Spatial")
+phase("12. Evaluate base vs. multisuite LoRA across all suites")
 
 EVAL_CAMERA_MAPPING = {
     "agentview_image": "front",
@@ -850,19 +995,21 @@ EVAL_CAMERA_MAPPING = {
 }
 
 
-def build_eval_command(policy_path: Path, output_dir: Path) -> list[str]:
+def build_eval_command(
+    policy_path: Path, output_dir: Path, suite_name: str, task_ids: list[int]
+) -> list[str]:
     return [
-        "lerobot-eval",
+        str(Path(sys.executable).parent / "lerobot-eval"),
         f"--policy.path={policy_path}",
         "--policy.device=cuda",
         "--policy.use_amp=false",
         "--env.type=libero",
         "--env.is_libero_plus=true",
-        "--env.task=libero_spatial",
-        "--env.task_ids=" + _json.dumps(EVAL_TASK_IDS, separators=(",", ":")),
+        f"--env.task={suite_name}",
+        "--env.task_ids=" + _json.dumps(task_ids, separators=(",", ":")),
         "--env.camera_name_mapping=" + _json.dumps(EVAL_CAMERA_MAPPING, separators=(",", ":")),
-        "--env.observation_height=256",
-        "--env.observation_width=256",
+        f"--env.observation_height={EVAL_OBSERVATION_SIZE}",
+        f"--env.observation_width={EVAL_OBSERVATION_SIZE}",
         "--env.control_mode=relative",
         "--env.max_parallel_tasks=1",
         "--eval.batch_size=1",
@@ -874,7 +1021,13 @@ def build_eval_command(policy_path: Path, output_dir: Path) -> list[str]:
     ]
 
 
-def run_evaluation(policy_path: Path, output_dir: Path, label: str) -> dict:
+def run_evaluation(
+    policy_path: Path,
+    output_dir: Path,
+    label: str,
+    suite_name: str,
+    task_ids: list[int],
+) -> dict:
     shutil.rmtree(output_dir, ignore_errors=True)
 
     eval_env = os.environ.copy()
@@ -890,7 +1043,7 @@ def run_evaluation(policy_path: Path, output_dir: Path, label: str) -> dict:
     eval_env["PYTHONUNBUFFERED"] = "1"
 
     process = subprocess.Popen(
-        build_eval_command(policy_path, output_dir),
+        build_eval_command(policy_path, output_dir, suite_name, task_ids),
         cwd=LEROBOT_DIR,
         env=eval_env,
         text=True,
@@ -917,7 +1070,7 @@ def run_evaluation(policy_path: Path, output_dir: Path, label: str) -> dict:
         if match:
             task_index, task_total, episode_index, episode_total = match.groups()
             print(
-                f"{label:<13} | task {task_index}/{task_total} | episode {episode_index}/{episode_total}",
+                f"{label:<35} | task {task_index}/{task_total} | episode {episode_index}/{episode_total}",
                 flush=True,
             )
 
@@ -934,8 +1087,29 @@ def run_evaluation(policy_path: Path, output_dir: Path, label: str) -> dict:
     return _json.loads(result_path.read_text(encoding="utf-8"))
 
 
-BASE_EVAL_INFO = run_evaluation(BASELINE_MODEL_DIR, BASE_EVAL_DIR, "Base model")
-FINETUNED_EVAL_INFO = run_evaluation(MERGED_MODEL_DIR, FINETUNED_EVAL_DIR, "Multisuite LoRA")
+BASE_EVAL_INFO_BY_SUITE: dict[str, dict] = {}
+FINETUNED_EVAL_INFO_BY_SUITE: dict[str, dict] = {}
+
+for suite_name in EVAL_SUITE_NAMES:
+    task_ids = sorted(task_id for task_id, _ in EVAL_TASKS_BY_SUITE[suite_name])
+
+    if not task_ids:
+        continue
+
+    BASE_EVAL_INFO_BY_SUITE[suite_name] = run_evaluation(
+        BASELINE_MODEL_DIR,
+        BASE_EVAL_DIR / suite_name,
+        f"Base model [{suite_name}]",
+        suite_name,
+        task_ids,
+    )
+    FINETUNED_EVAL_INFO_BY_SUITE[suite_name] = run_evaluation(
+        MERGED_MODEL_DIR,
+        FINETUNED_EVAL_DIR / suite_name,
+        f"Multisuite LoRA [{suite_name}]",
+        suite_name,
+        task_ids,
+    )
 
 print("Evaluation complete.")
 
@@ -967,32 +1141,72 @@ def per_task_success(eval_info: dict) -> dict[int, float]:
     return result
 
 
-base_per_task = per_task_success(BASE_EVAL_INFO)
-finetuned_per_task = per_task_success(FINETUNED_EVAL_INFO)
-
 rows = []
 
-for task_id in EVAL_TASK_IDS:
-    base_score = base_per_task[task_id]
-    finetuned_score = finetuned_per_task[task_id]
+for suite_name in EVAL_SUITE_NAMES:
+    matched_task_ids = sorted(task_id for task_id, _ in EVAL_TASKS_BY_SUITE[suite_name])
 
+    if not matched_task_ids:
+        continue
+
+    base_eval_info = BASE_EVAL_INFO_BY_SUITE[suite_name]
+    finetuned_eval_info = FINETUNED_EVAL_INFO_BY_SUITE[suite_name]
+    base_per_task = per_task_success(base_eval_info)
+    finetuned_per_task = per_task_success(finetuned_eval_info)
+
+    for task_id in matched_task_ids:
+        base_score = base_per_task[task_id]
+        finetuned_score = finetuned_per_task[task_id]
+
+        rows.append(
+            {
+                "Suite": suite_name,
+                "Task ID": task_id,
+                "Task": EVAL_TASK_LABELS[(suite_name, task_id)],
+                "Base (%)": base_score,
+                "Multisuite LoRA (%)": finetuned_score,
+                "Delta (pp)": finetuned_score - base_score,
+            }
+        )
+
+    base_suite_overall = float(base_eval_info["overall"]["pc_success"])
+    finetuned_suite_overall = float(finetuned_eval_info["overall"]["pc_success"])
     rows.append(
         {
-            "Task ID": task_id,
-            "Task": TASK_NAMES[task_id],
-            "Base (%)": base_score,
-            "Multisuite LoRA (%)": finetuned_score,
-            "Delta (pp)": finetuned_score - base_score,
+            "Suite": suite_name,
+            "Task ID": "Overall",
+            "Task": f"{suite_name} (n={len(matched_task_ids)} tasks)",
+            "Base (%)": base_suite_overall,
+            "Multisuite LoRA (%)": finetuned_suite_overall,
+            "Delta (pp)": finetuned_suite_overall - base_suite_overall,
         }
     )
 
-base_overall = float(BASE_EVAL_INFO["overall"]["pc_success"])
-finetuned_overall = float(FINETUNED_EVAL_INFO["overall"]["pc_success"])
+
+def aggregate_success(eval_info_by_suite: dict[str, dict]) -> float:
+    success_count = 0
+    episode_count = 0
+
+    for eval_info in eval_info_by_suite.values():
+        for task_info in eval_info["per_task"]:
+            successes = task_info["metrics"]["successes"]
+            success_count += sum(bool(value) for value in successes)
+            episode_count += len(successes)
+
+    if episode_count == 0:
+        raise RuntimeError("Evaluation produced no episodes.")
+
+    return 100.0 * success_count / episode_count
+
+
+base_overall = aggregate_success(BASE_EVAL_INFO_BY_SUITE)
+finetuned_overall = aggregate_success(FINETUNED_EVAL_INFO_BY_SUITE)
 
 rows.append(
     {
+        "Suite": "ALL",
         "Task ID": "Overall",
-        "Task": "LIBERO-Spatial",
+        "Task": f"All suites (n={len(EVAL_TASK_LABELS)} tasks)",
         "Base (%)": base_overall,
         "Multisuite LoRA (%)": finetuned_overall,
         "Delta (pp)": finetuned_overall - base_overall,
