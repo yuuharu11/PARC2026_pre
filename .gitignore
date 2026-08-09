@@ -7,3 +7,8 @@ LIBERO/
 env.sh
 assets.zip
 *_smoketest*/
+
+# Local model and submission artifacts (too large for Git; keep them on disk).
+/submission_template/model_weights/
+/smolvla_*.zip
+/track1_*submission.zip

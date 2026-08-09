@@ -1,5 +1,17 @@
 # 提出物テンプレート
 
+`policy_server.py` には `lerobot/smolvla_libero_plus` ベースラインが実装済みである。
+LoRAをマージしたモデル一式を `model_weights/` に置くと自動的にそちらを使う。
+ローカル比較ではコピーせず、次のようにチェックポイントを指定できる。
+
+```bash
+SMOLVLA_CHECKPOINT=/content/smolvla_libero_plus_multisuite_lora_merged \
+  python policy_server.py --port 8000
+```
+
+デバイスは自動選択される。必要なら `SMOLVLA_DEVICE=cuda` または `cpu` で固定できる。
+採点環境のネットワークに依存しないよう、最終提出には重みを同梱すること。
+
 ## ディレクトリ構成
 
 ```
