@@ -72,9 +72,16 @@ unzip 直後に同一の検査を実施する。
   「タイムアウト仕様」を参照すること）
 - `reset()` はエピソードごとに呼び出される。内部状態（action chunking のキャッシュ等）をクリアすること
 
-> **SmolVLA 実装上の仮定:** pretrained checkpoint の config.json は state shape を (6,) と
+> **SmolVLA 実装上の注意:** pretrained checkpoint の config.json は state shape を (6,) と
 > 記載しているが、実際に保存されている正規化統計量（policy_preprocessor の
-> normalizer safetensors）は (8,) であり、値のレンジから `eef_pos(3) + eef_euler_xyz(3)
-> + gripper_qpos(2)` と推定して実装している（config.json の記載が誤り、または stale）。
-> 統計量の傾向から妥当性は高いと考えられるが、公式ドキュメントによる確証はないため
-> 実際の成功率で要検証。
+> normalizer safetensors）は (8,) である（config.json の記載は誤り、または stale）。
+> `eef_pos(3) + [回転](3) + gripper_qpos(2)` という構成自体は統計量のレンジから
+> 妥当だが、回転成分を当初 Euler 角（`scipy.spatial.transform.Rotation.as_euler`）と
+> 誤って実装していた。lerobot 本体の `lerobot/processor/env_processor.py` の
+> `LiberoProcessorStep`（このチェックポイントの学習・`lerobot-eval` 評価が実際に
+> 使っている変換）を確認したところ、四元数を **axis-angle**（回転軸×回転角）に
+> 変換していることが判明した。Euler角と axis-angle はどちらも3次元で値域も
+> 似ているため、統計量レンジのチェックだけでは区別できず、この不一致は
+> 衝突率の異常な高さ（pretrained単体で約80%）という形で現れていた。
+> `policy_server.py` は現在 axis-angle 変換に修正済み（衝突率は大幅に改善したが、
+> Track1 の摂動タスクでの成功率向上にはさらなる学習が必要）。

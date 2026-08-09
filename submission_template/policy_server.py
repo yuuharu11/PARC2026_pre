@@ -91,11 +91,17 @@ class MyPolicy(BasePolicy):
         self.instruction = ""
 
     def get_action(self, obs: dict[str, np.ndarray]) -> np.ndarray:
-        from scipy.spatial.transform import Rotation
-
         torch = self._torch
 
         def image_tensor(image: np.ndarray):
+            # Tried a 180-degree H/W flip here to match lerobot's own
+            # LiberoProcessorStep (which flips live-rendered LIBERO camera
+            # frames to correct for a HuggingFaceVLA/libero orientation
+            # mismatch specific to its own env wrapper). Empirically this
+            # made things worse for our pipeline (collision rate 0.60 ->
+            # 0.70 on the pretrained checkpoint) -- this repo's own
+            # pipeline/environment.py apparently already renders in the
+            # orientation the model expects, so no flip is needed here.
             return (
                 torch.from_numpy(image)
                 .permute(2, 0, 1)
@@ -104,15 +110,32 @@ class MyPolicy(BasePolicy):
                 .div_(255.0)
             )
 
+        def quat_to_axis_angle(quat_xyzw: np.ndarray) -> np.ndarray:
+            # Matches lerobot's own LiberoProcessorStep._quat2axisangle exactly
+            # (lerobot/src/lerobot/processor/env_processor.py), which is what
+            # this checkpoint was actually trained/evaluated against via
+            # lerobot-eval. An earlier version of this function used Euler
+            # angles instead -- both are 3-dim and happen to span a similar
+            # ~[-pi, pi] numeric range, so the mismatch passed a range-based
+            # sanity check but was silently degrading control precision
+            # (high collision rates) since the model never saw this rotation
+            # representation during training.
+            w = np.clip(quat_xyzw[3], -1.0, 1.0)
+            den = np.sqrt(max(1.0 - w * w, 0.0))
+            if den <= 1e-10:
+                return np.zeros(3, dtype=np.float32)
+            angle = 2.0 * np.arccos(w)
+            axis = quat_xyzw[:3] / den
+            return (axis * angle).astype(np.float32)
+
         # State layout (8-dim): the checkpoint's config.json claims shape (6,), but
         # the actual saved normalizer stats (policy_preprocessor_step_5_normalizer_
-        # processor.safetensors) are (8,) with value ranges that match eef_pos(3)
-        # + eef_euler_xyz(3, spanning ~[-pi, pi]) + gripper_qpos(2, near-symmetric
-        # +/- pair) -- confirmed empirically against those stats, not from docs.
+        # processor.safetensors) are (8,), matching lerobot's own LiberoProcessorStep:
+        # eef_pos(3) + eef_quat-as-axis-angle(3) + gripper_qpos(2).
         state = np.concatenate(
             [
                 np.asarray(obs["robot0_eef_pos"], dtype=np.float32),
-                Rotation.from_quat(obs["robot0_eef_quat"]).as_euler("xyz").astype(np.float32),
+                quat_to_axis_angle(np.asarray(obs["robot0_eef_quat"], dtype=np.float64)),
                 np.asarray(obs["robot0_gripper_qpos"], dtype=np.float32),
             ]
         )
@@ -122,12 +145,8 @@ class MyPolicy(BasePolicy):
             "observation.images.camera1": image_tensor(obs["agentview_image"]),
             "observation.images.camera2": image_tensor(obs["robot0_eye_in_hand_image"]),
             "observation.images.camera3": torch.zeros((3, 256, 256), dtype=torch.float32),
-            "observation.images.empty_camera_0": torch.zeros(
-                (3, 480, 640), dtype=torch.float32
-            ),
-            "observation.images.empty_camera_1": torch.zeros(
-                (3, 480, 640), dtype=torch.float32
-            ),
+            "observation.images.empty_camera_0": torch.zeros((3, 480, 640), dtype=torch.float32),
+            "observation.images.empty_camera_1": torch.zeros((3, 480, 640), dtype=torch.float32),
             "task": self.instruction,
         }
         batch = self.preprocessor(batch)
