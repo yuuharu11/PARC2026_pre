@@ -24,8 +24,9 @@ LEROBOT_PI05_DEVICE=cuda \
 python policy_server.py --port 8000
 ```
 
-このbackendは公式LeRobot LIBERO評価と同じ画像180度回転、axis-angle state変換、
-保存済みnormalizerを使用する。既定では生成chunkから5 actionずつ実行する。変更する場合は
+このbackendは公式LeRobot LIBERO評価と同じ無回転画像、axis-angle state変換、
+保存済みnormalizerを使用する。OpenPI版との比較のため回転を戻す場合は
+`LEROBOT_PI05_FLIP_IMAGES=1`を指定する。既定では生成chunkから5 actionずつ実行し、変更には
 `LEROBOT_PI05_ACTION_CHUNK`を指定する。最終提出ではcheckpointを
 `pi05_lerobot_weights/`へ配置し、tokenizerも同ディレクトリの`tokenizer/`へ同梱する。
 PyTorch版pi0.5が必要とするopenpiのTransformers互換差分は`transformers_replace/`に同梱し、
@@ -35,7 +36,7 @@ Track 1の基準評価は、サーバーを起動した後にリポジトリ直�
 
 ```bash
 python -m pipeline --server-url http://localhost:8000 --track track1 \
-  --n-episodes 8 --max-steps 300 --output-dir results/pi05_lerobot_track1_8ep
+  --n-episodes 2 --max-steps 600
 ```
 
 採点環境は Python 3.10 であり、`lerobot[smolvla]==0.4.4` を通常インストールすると

@@ -28,9 +28,16 @@ def test_state_layout():
     )
 
 
-def test_image_tensor_flips_and_scales():
+def test_image_tensor_preserves_orientation_and_scales():
     image = np.zeros((4, 5, 3), dtype=np.uint8)
     image[0, 0] = [255, 128, 0]
     tensor = pi05._image_tensor(image)
     assert tuple(tensor.shape) == (3, 4, 5)
+    np.testing.assert_allclose(tensor[:, 0, 0].numpy(), [1.0, 128 / 255, 0.0])
+
+
+def test_image_tensor_can_flip_for_openpi_comparison():
+    image = np.zeros((4, 5, 3), dtype=np.uint8)
+    image[0, 0] = [255, 128, 0]
+    tensor = pi05._image_tensor(image, flip=True)
     np.testing.assert_allclose(tensor[:, -1, -1].numpy(), [1.0, 128 / 255, 0.0])

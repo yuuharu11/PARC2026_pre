@@ -46,11 +46,14 @@ def _build_state(obs: dict[str, np.ndarray]) -> np.ndarray:
     )
 
 
-def _image_tensor(image: np.ndarray):
-    """Convert a raw LIBERO image exactly like LeRobot's environment processor."""
+def _image_tensor(image: np.ndarray, *, flip: bool = False):
+    """Convert a raw LIBERO image like LeRobot's environment processor."""
     import torch
 
-    array = np.ascontiguousarray(np.asarray(image, dtype=np.uint8)[::-1, ::-1])
+    array = np.asarray(image, dtype=np.uint8)
+    if flip:
+        array = array[::-1, ::-1]
+    array = np.ascontiguousarray(array)
     return torch.from_numpy(array).permute(2, 0, 1).contiguous().float().div_(255.0)
 
 
@@ -73,6 +76,11 @@ class LeRobotPi05Policy:
         if requested_device.startswith("cuda") and not torch.cuda.is_available():
             raise RuntimeError("LEROBOT_PI05_DEVICE requests CUDA, but PyTorch cannot access a GPU")
         self.device = torch.device(requested_device)
+        self.flip_images = os.environ.get("LEROBOT_PI05_FLIP_IMAGES", "0").lower() not in {
+            "0",
+            "false",
+            "no",
+        }
 
         bundled_checkpoint = here / "pi05_lerobot_weights"
         self.checkpoint = Path(
@@ -153,8 +161,10 @@ class LeRobotPi05Policy:
         batch = {
             "observation.state": torch.from_numpy(_build_state(obs)),
             "task": self.instruction,
-            self.image_keys[0]: _image_tensor(obs["agentview_image"]),
-            self.image_keys[1]: _image_tensor(obs["robot0_eye_in_hand_image"]),
+            self.image_keys[0]: _image_tensor(obs["agentview_image"], flip=self.flip_images),
+            self.image_keys[1]: _image_tensor(
+                obs["robot0_eye_in_hand_image"], flip=self.flip_images
+            ),
         }
         for image_key in self.image_keys[2:]:
             batch[image_key] = torch.zeros(self.image_shapes[image_key], dtype=torch.float32)
