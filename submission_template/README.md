@@ -12,12 +12,25 @@ SMOLVLA_CHECKPOINT=/content/smolvla_libero_plus_multisuite_lora_merged \
 デバイスは自動選択される。必要なら `SMOLVLA_DEVICE=cuda` または `cpu` で固定できる。
 採点環境のネットワークに依存しないよう、最終提出には重みを同梱すること。
 
+採点環境は Python 3.10 であり、`lerobot[smolvla]==0.4.4` を通常インストールすると
+不要な hardware 依存の `pynput -> evdev` が入り、`Python.h` 不在でビルドに失敗する。
+そのため、動作確認済み環境の LeRobot 0.4.4 パッケージを提出物へソース同梱する。
+
+```bash
+cp -a "$(python -c 'import pathlib, lerobot; print(pathlib.Path(lerobot.__file__).parent)')" \
+  submission_template/lerobot
+find submission_template/lerobot -type d -name __pycache__ -prune -exec rm -rf {} +
+```
+
+`requirements.txt` はSmolVLA推論に必要な依存のみを列挙しており、`evdev`を導入しない。
+
 ## ディレクトリ構成
 
 ```
 submission.zip
 ├── policy_server.py     # ← MyPolicy クラスを編集する（必須）
 ├── requirements.txt     # ← 追加依存があれば記載（必須）
+├── lerobot/             # ← 推論用LeRobot 0.4.4ソース（K8s互換）
 └── model_weights/       # ← チェックポイント等を配置（任意）
 ```
 
@@ -28,7 +41,7 @@ submission.zip
 3. 追加ライブラリがあれば `requirements.txt` に追記する
 4. zip にまとめて提出する:
    ```bash
-   zip -r submission.zip policy_server.py requirements.txt model_weights/
+   zip -r submission.zip policy_server.py requirements.txt lerobot/ model_weights/
    ```
 
 ## ローカルテスト

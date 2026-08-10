@@ -8,5 +8,19 @@ numpy>=1.19
 # 例:
 # torch>=2.0
 # transformers>=4.30
-lerobot[smolvla]==0.4.4
+# LeRobot 0.4.4 is bundled as source in ./lerobot. Installing its PyPI package
+# would pull the unused pynput -> evdev hardware stack, whose source build fails
+# in the Python 3.10 grading image because Python.h is intentionally absent.
+transformers>=4.57.1,<5.0
+accelerate>=1.7,<2.0
+safetensors>=0.4.3,<1.0
+num2words>=0.5.14,<0.6
+draccus>=0.10.0,<0.11
+einops>=0.8.0,<0.9
+gymnasium>=1.1.1,<2.0
+opencv-python-headless>=4.9,<4.12
+pillow>=10,<12
+huggingface-hub>=0.34,<1.0
+packaging>=24.2,<26
+termcolor>=2.4,<4
 scipy==1.15.3
