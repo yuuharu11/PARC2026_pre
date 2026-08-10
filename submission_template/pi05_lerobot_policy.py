@@ -76,7 +76,7 @@ class LeRobotPi05Policy:
         if requested_device.startswith("cuda") and not torch.cuda.is_available():
             raise RuntimeError("LEROBOT_PI05_DEVICE requests CUDA, but PyTorch cannot access a GPU")
         self.device = torch.device(requested_device)
-        self.flip_images = os.environ.get("LEROBOT_PI05_FLIP_IMAGES", "0").lower() not in {
+        self.flip_images = os.environ.get("LEROBOT_PI05_FLIP_IMAGES", "1").lower() not in {
             "0",
             "false",
             "no",

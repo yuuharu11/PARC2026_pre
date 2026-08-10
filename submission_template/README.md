@@ -24,9 +24,9 @@ LEROBOT_PI05_DEVICE=cuda \
 python policy_server.py --port 8000
 ```
 
-このbackendは公式LeRobot LIBERO評価と同じ無回転画像、axis-angle state変換、
-保存済みnormalizerを使用する。OpenPI版との比較のため回転を戻す場合は
-`LEROBOT_PI05_FLIP_IMAGES=1`を指定する。既定では生成chunkから5 actionずつ実行し、変更には
+このcheckpointは評価実験で無回転画像が0/8だったため、OpenPIと同じ画像180度回転を標準とする。
+無回転との比較には`LEROBOT_PI05_FLIP_IMAGES=0`を指定する。axis-angle state変換と
+保存済みnormalizerを使用する。既定では生成chunkから5 actionずつ実行し、変更には
 `LEROBOT_PI05_ACTION_CHUNK`を指定する。最終提出ではcheckpointを
 `pi05_lerobot_weights/`へ配置し、tokenizerも同ディレクトリの`tokenizer/`へ同梱する。
 PyTorch版pi0.5が必要とするopenpiのTransformers互換差分は`transformers_replace/`に同梱し、
