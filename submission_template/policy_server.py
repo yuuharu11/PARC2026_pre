@@ -66,7 +66,7 @@ class BasePolicy(ABC):
 
 
 class MyPolicy(BasePolicy):
-    """Pretrained SmolVLA policy for LIBERO-plus."""
+    """Select a single learned policy backend for every task."""
 
     def __init__(self):
         self._delegate = None
@@ -75,6 +75,11 @@ class MyPolicy(BasePolicy):
             from pi05_policy import Pi05Policy
 
             self._delegate = Pi05Policy()
+            return
+        if backend in {"pi05_lerobot", "lerobot_pi05"}:
+            from pi05_lerobot_policy import LeRobotPi05Policy
+
+            self._delegate = LeRobotPi05Policy()
             return
         if backend == "vlanext":
             from vlanext_policy import VLANeXtPolicy

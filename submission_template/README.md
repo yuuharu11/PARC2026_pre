@@ -12,6 +12,32 @@ SMOLVLA_CHECKPOINT=/content/smolvla_libero_plus_multisuite_lora_merged \
 デバイスは自動選択される。必要なら `SMOLVLA_DEVICE=cuda` または `cpu` で固定できる。
 採点環境のネットワークに依存しないよう、最終提出には重みを同梱すること。
 
+## LeRobot版pi0.5-LIBERO
+
+LeRobot 0.4.4のPyTorch版pi0.5を比較する場合は、LIBERO学習済みcheckpointを指定して
+専用backendを選ぶ。
+
+```bash
+POLICY_BACKEND=pi05_lerobot \
+LEROBOT_PI05_CHECKPOINT=/work/PARC2026_models/pi05_libero_finetuned_v044 \
+LEROBOT_PI05_DEVICE=cuda \
+python policy_server.py --port 8000
+```
+
+このbackendは公式LeRobot LIBERO評価と同じ画像180度回転、axis-angle state変換、
+保存済みnormalizerを使用する。既定では生成chunkから5 actionずつ実行する。変更する場合は
+`LEROBOT_PI05_ACTION_CHUNK`を指定する。最終提出ではcheckpointを
+`pi05_lerobot_weights/`へ配置し、tokenizerも同ディレクトリの`tokenizer/`へ同梱する。
+PyTorch版pi0.5が必要とするopenpiのTransformers互換差分は`transformers_replace/`に同梱し、
+backend初期化時に`transformers==4.53.2`へ適用する。
+
+Track 1の基準評価は、サーバーを起動した後にリポジトリ直下から次を実行する。
+
+```bash
+python -m pipeline --server-url http://localhost:8000 --track track1 \
+  --n-episodes 8 --max-steps 300 --output-dir results/pi05_lerobot_track1_8ep
+```
+
 採点環境は Python 3.10 であり、`lerobot[smolvla]==0.4.4` を通常インストールすると
 不要な hardware 依存の `pynput -> evdev` が入り、`Python.h` 不在でビルドに失敗する。
 そのため、動作確認済み環境の LeRobot 0.4.4 パッケージを提出物へソース同梱する。
