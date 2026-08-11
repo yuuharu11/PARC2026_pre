@@ -11,7 +11,4 @@ assets.zip
 # Local model and submission artifacts (too large for Git; keep them on disk).
 /submission_template/model_weights/
 /submission_template/lerobot/
-/smolvla_*.zip
-/track1_*submission.zip
-/pi05_submission_*.zip
-/zip/
+/submission_zip/
