@@ -47,6 +47,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--peak-lr", type=float, default=1e-5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--augment",
+        action="store_true",
+        help="apply TexturePerturbation (dark/blue-tint/desaturate) to training images only; "
+        "the tomato-sauce task gets boosted, dark-skewed augmentation (see augmented_data_config.py)",
+    )
+    parser.add_argument(
+        "--augment-prob",
+        type=float,
+        default=0.15,
+        help="augmentation probability for non-boosted tasks (boosted tasks use --boosted-prob)",
+    )
+    parser.add_argument(
+        "--boosted-prob",
+        type=float,
+        default=0.9,
+        help="augmentation probability for the tomato-sauce task specifically",
+    )
+    parser.add_argument(
+        "--boosted-dark-weight",
+        type=float,
+        default=0.7,
+        help="fraction of boosted-task augmentations that use dark mode specifically",
+    )
     return parser.parse_args()
 
 
@@ -92,6 +116,9 @@ def main() -> None:
     from openpi.training import optimizer
     from openpi.training import weight_loaders
 
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from augmented_data_config import AugmentedLeRobotLiberoDataConfig
+
     model = pi0_config.Pi0Config(
         pi05=True,
         action_horizon=10,
@@ -100,19 +127,25 @@ def main() -> None:
         action_expert_variant="gemma_300m_lora",
     )
     warmup_steps = min(100, max(1, args.steps // 10))
+    data_config_cls = AugmentedLeRobotLiberoDataConfig if args.augment else train_config.LeRobotLiberoDataConfig
+    data_config_kwargs = dict(
+        repo_id=args.dataset_repo_id,
+        assets=train_config.AssetsConfig(
+            assets_dir=str(base_checkpoint / "assets"),
+            asset_id="physical-intelligence/libero",
+        ),
+        base_config=train_config.DataConfig(prompt_from_task=True),
+        extra_delta_transform=False,
+    )
+    if args.augment:
+        data_config_kwargs["augment_prob"] = args.augment_prob
+        data_config_kwargs["boosted_prob"] = args.boosted_prob
+        data_config_kwargs["boosted_dark_weight"] = args.boosted_dark_weight
     config = train_config.TrainConfig(
         name="pi05_libero_lora",
         exp_name=args.exp_name,
         model=model,
-        data=train_config.LeRobotLiberoDataConfig(
-            repo_id=args.dataset_repo_id,
-            assets=train_config.AssetsConfig(
-                assets_dir=str(base_checkpoint / "assets"),
-                asset_id="physical-intelligence/libero",
-            ),
-            base_config=train_config.DataConfig(prompt_from_task=True),
-            extra_delta_transform=False,
-        ),
+        data=data_config_cls(**data_config_kwargs),
         weight_loader=weight_loaders.CheckpointWeightLoader(str(base_checkpoint / "params")),
         # Freeze every dense parameter.  The stock low-memory recipe also
         # updates vision/projection weights (~467M params); for this already
@@ -153,6 +186,8 @@ def main() -> None:
         "batch_size": args.batch_size,
         "peak_lr": args.peak_lr,
         "seed": args.seed,
+        "augment": args.augment,
+        "augment_prob": args.augment_prob if args.augment else None,
         "model": dataclasses.asdict(model),
     }
     train_module = load_train_module(openpi_root)
