@@ -52,10 +52,23 @@ def main() -> None:
     data_cache: dict[tuple[int, int], pd.DataFrame] = {}
 
     def get_data_file(chunk_index: int, file_index: int) -> pd.DataFrame:
+        # NB: `dataset_from_index`/`dataset_to_index` in episodes metadata are
+        # GLOBAL row indices across the whole dataset (all chunk/file parquet
+        # files concatenated), not positions local to this one file -- using
+        # them as .iloc[from:to] on a single file's DataFrame is only correct
+        # for file_index 0 (which starts at global row 0). For every later
+        # file it silently reads the wrong rows, or (if the global index
+        # exceeds this file's row count) returns an empty slice, crashing
+        # downstream with "need at least one array to stack". Verified: the
+        # first ~780 episodes processed earlier this session all happened to
+        # sit in file-000, which is why this went unnoticed until sampling
+        # episodes from across the full 14,347-episode range. Index directly
+        # by the row-level `episode_index` column instead -- correct
+        # regardless of which file an episode's rows live in.
         key = (chunk_index, file_index)
         if key not in data_cache:
             path = args.root / "data" / f"chunk-{chunk_index:03d}" / f"file-{file_index:03d}.parquet"
-            data_cache[key] = pd.read_parquet(path)
+            data_cache[key] = pd.read_parquet(path).set_index("episode_index", drop=False)
         return data_cache[key]
 
     if args.episode_list_file is not None:
@@ -69,10 +82,10 @@ def main() -> None:
             continue
 
         ep = episodes_meta.loc[episode_index]
-        rows = get_data_file(int(ep["data/chunk_index"]), int(ep["data/file_index"])).iloc[
-            int(ep["dataset_from_index"]) : int(ep["dataset_to_index"])
-        ]
+        rows = get_data_file(int(ep["data/chunk_index"]), int(ep["data/file_index"])).loc[[episode_index]]
+        rows = rows.sort_values("frame_index")
         assert (rows["episode_index"] == episode_index).all()
+        assert len(rows) > 0
 
         state = np.stack(rows["observation.state"].to_numpy())
         action = np.stack(rows["action"].to_numpy())

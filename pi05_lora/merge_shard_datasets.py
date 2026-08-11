@@ -45,6 +45,7 @@ def main() -> None:
     master = args.master_dir
     info_path = master / "meta" / "info.json"
     info = json.loads(info_path.read_text())
+    chunks_size = info["chunks_size"]
 
     task_to_index = {row["task"]: row["task_index"] for row in load_jsonl(master / "meta" / "tasks.jsonl")}
 
@@ -78,8 +79,18 @@ def main() -> None:
             df["task_index"] = global_task_index
             df["index"] = range(next_row_index, next_row_index + n)
 
-            dst_parquet = master / "data" / "chunk-000" / f"episode_{next_episode_index:06d}.parquet"
+            # episode_chunk follows the same `episode_index // chunks_size`
+            # convention info.json's data_path template implies -- crossing a
+            # chunks_size boundary (e.g. episode 1000 at the default 1000)
+            # without this rolls episodes into the wrong directory, which
+            # LeRobotDataset's own path resolution then can't find, throwing
+            # an assertion error deep in its __init__ on next load. Verified
+            # by hitting exactly this merging a 780-episode dataset past 1000.
+            episode_chunk = next_episode_index // chunks_size
+            chunk_dir = master / "data" / f"chunk-{episode_chunk:03d}"
+            dst_parquet = chunk_dir / f"episode_{next_episode_index:06d}.parquet"
             if not args.dry_run:
+                chunk_dir.mkdir(parents=True, exist_ok=True)
                 df.to_parquet(dst_parquet)
 
             ep_row = dict(ep_meta)
@@ -107,6 +118,7 @@ def main() -> None:
     info["total_episodes"] += total_new_episodes
     info["total_frames"] += total_new_frames
     info["splits"]["train"] = f"0:{info['total_episodes']}"
+    info["total_chunks"] = max(1, (info["total_episodes"] - 1) // chunks_size + 1)
     info_path.write_text(json.dumps(info, indent=4))
 
     print(f"done: master now has {info['total_episodes']} episodes, {info['total_frames']} frames")
