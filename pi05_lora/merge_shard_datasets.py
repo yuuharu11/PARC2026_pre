@@ -21,7 +21,8 @@ import argparse
 import json
 from pathlib import Path
 
-import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 
 def load_jsonl(path: Path) -> list[dict]:
@@ -71,13 +72,25 @@ def main() -> None:
             global_task_index = task_to_index[task_str]
 
             src_parquet = shard_dir / "data" / "chunk-000" / f"episode_{local_idx:06d}.parquet"
-            df = pd.read_parquet(src_parquet)
-            assert (df["episode_index"] == local_idx).all()
+            table = pq.read_table(src_parquet)
+            assert table.column("episode_index")[0].as_py() == local_idx
 
-            n = len(df)
-            df["episode_index"] = next_episode_index
-            df["task_index"] = global_task_index
-            df["index"] = range(next_row_index, next_row_index + n)
+            n = table.num_rows
+            table = table.set_column(
+                table.schema.get_field_index("episode_index"),
+                "episode_index",
+                pa.array([next_episode_index] * n, type=pa.int64()),
+            )
+            table = table.set_column(
+                table.schema.get_field_index("task_index"),
+                "task_index",
+                pa.array([global_task_index] * n, type=pa.int64()),
+            )
+            table = table.set_column(
+                table.schema.get_field_index("index"),
+                "index",
+                pa.array(range(next_row_index, next_row_index + n), type=pa.int64()),
+            )
 
             # episode_chunk follows the same `episode_index // chunks_size`
             # convention info.json's data_path template implies -- crossing a
@@ -91,7 +104,7 @@ def main() -> None:
             dst_parquet = chunk_dir / f"episode_{next_episode_index:06d}.parquet"
             if not args.dry_run:
                 chunk_dir.mkdir(parents=True, exist_ok=True)
-                df.to_parquet(dst_parquet)
+                pq.write_table(table, dst_parquet)
 
             ep_row = dict(ep_meta)
             ep_row["episode_index"] = next_episode_index

@@ -58,6 +58,7 @@ def main() -> None:
 
     src_episodes = load_jsonl(src / "meta" / "episodes.jsonl")
     src_stats = {row["episode_index"]: row for row in load_jsonl(src / "meta" / "episodes_stats.jsonl")}
+    chunks_size = json.loads((src / "meta" / "info.json").read_text())["chunks_size"]
 
     matched = [ep for ep in src_episodes if ep["tasks"][0] == args.task]
     if not matched:
@@ -70,7 +71,8 @@ def main() -> None:
 
     for new_idx, ep_meta in enumerate(matched):
         local_idx = ep_meta["episode_index"]
-        src_parquet = src / "data" / "chunk-000" / f"episode_{local_idx:06d}.parquet"
+        src_chunk = local_idx // chunks_size
+        src_parquet = src / "data" / f"chunk-{src_chunk:03d}" / f"episode_{local_idx:06d}.parquet"
         table = pq.read_table(src_parquet)
         assert table.column("episode_index")[0].as_py() == local_idx
 
