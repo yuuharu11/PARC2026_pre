@@ -71,6 +71,18 @@ def parse_args() -> argparse.Namespace:
         default=0.7,
         help="fraction of boosted-task augmentations that use dark mode specifically",
     )
+    parser.add_argument(
+        "--standard-augment",
+        action="store_true",
+        help="apply StandardImageAugmentation (random crop + brightness/contrast/saturation "
+        "jitter) instead of TexturePerturbation; mutually exclusive with --augment "
+        "(see standard_augmentation.py)",
+    )
+    parser.add_argument(
+        "--wandb",
+        action="store_true",
+        help="enable wandb logging (requires WANDB_API_KEY env var or prior `wandb login`)",
+    )
     return parser.parse_args()
 
 
@@ -100,12 +112,15 @@ def main() -> None:
         raise FileNotFoundError(f"base checkpoint not found: {base_checkpoint}")
     if not (dataset_root / "meta" / "info.json").is_file():
         raise FileNotFoundError(f"LIBERO dataset not found: {dataset_root}")
+    if args.augment and args.standard_augment:
+        raise ValueError("--augment and --standard-augment are mutually exclusive")
 
     os.environ["HF_LEROBOT_HOME"] = str(dataset_home)
     os.environ.setdefault("HF_HOME", str(hf_cache))
     os.environ.setdefault("HF_DATASETS_CACHE", str(hf_cache / "datasets"))
     os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.9")
-    os.environ.setdefault("WANDB_MODE", "disabled")
+    if not args.wandb:
+        os.environ.setdefault("WANDB_MODE", "disabled")
     sys.path.insert(0, str(openpi_root / "src"))
 
     import flax.nnx as nnx
@@ -118,6 +133,7 @@ def main() -> None:
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from augmented_data_config import AugmentedLeRobotLiberoDataConfig
+    from standard_augmented_data_config import StandardAugmentedLeRobotLiberoDataConfig
 
     model = pi0_config.Pi0Config(
         pi05=True,
@@ -127,7 +143,12 @@ def main() -> None:
         action_expert_variant="gemma_300m_lora",
     )
     warmup_steps = min(100, max(1, args.steps // 10))
-    data_config_cls = AugmentedLeRobotLiberoDataConfig if args.augment else train_config.LeRobotLiberoDataConfig
+    if args.augment:
+        data_config_cls = AugmentedLeRobotLiberoDataConfig
+    elif args.standard_augment:
+        data_config_cls = StandardAugmentedLeRobotLiberoDataConfig
+    else:
+        data_config_cls = train_config.LeRobotLiberoDataConfig
     data_config_kwargs = dict(
         repo_id=args.dataset_repo_id,
         assets=train_config.AssetsConfig(
@@ -141,6 +162,8 @@ def main() -> None:
         data_config_kwargs["augment_prob"] = args.augment_prob
         data_config_kwargs["boosted_prob"] = args.boosted_prob
         data_config_kwargs["boosted_dark_weight"] = args.boosted_dark_weight
+    elif args.standard_augment:
+        data_config_kwargs["augment_prob"] = args.augment_prob
     config = train_config.TrainConfig(
         name="pi05_libero_lora",
         exp_name=args.exp_name,
@@ -172,7 +195,7 @@ def main() -> None:
         checkpoint_base_dir=str(args.checkpoint_root.resolve()),
         seed=args.seed,
         overwrite=args.overwrite,
-        wandb_enabled=False,
+        wandb_enabled=args.wandb,
     )
 
     run_dir = config.checkpoint_dir
@@ -188,6 +211,8 @@ def main() -> None:
         "seed": args.seed,
         "augment": args.augment,
         "augment_prob": args.augment_prob if args.augment else None,
+        "standard_augment": args.standard_augment,
+        "standard_augment_prob": args.augment_prob if args.standard_augment else None,
         "model": dataclasses.asdict(model),
     }
     train_module = load_train_module(openpi_root)
