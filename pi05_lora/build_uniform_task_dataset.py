@@ -35,7 +35,7 @@ def main() -> None:
         import shutil
 
         shutil.rmtree(dst)
-    (dst / "data" / "chunk-000").mkdir(parents=True)
+    dst.mkdir(parents=True)
     (dst / "meta").mkdir(parents=True)
 
     src_info = json.loads((src / "meta" / "info.json").read_text())
@@ -83,7 +83,10 @@ def main() -> None:
                 "index",
                 pa.array(range(next_row_index, next_row_index + n), type=pa.int64()),
             )
-            pq.write_table(table, dst / "data" / "chunk-000" / f"episode_{new_idx:06d}.parquet")
+            dst_chunk = new_idx // chunks_size
+            dst_chunk_dir = dst / "data" / f"chunk-{dst_chunk:03d}"
+            dst_chunk_dir.mkdir(parents=True, exist_ok=True)
+            pq.write_table(table, dst_chunk_dir / f"episode_{new_idx:06d}.parquet")
 
             ep_row = dict(ep_meta)
             ep_row["episode_index"] = new_idx
@@ -111,7 +114,7 @@ def main() -> None:
     info["total_episodes"] = new_idx
     info["total_frames"] = total_frames
     info["total_tasks"] = len(tasks_sorted)
-    info["total_chunks"] = 1
+    info["total_chunks"] = max(1, (new_idx - 1) // chunks_size + 1) if new_idx else 1
     info["splits"]["train"] = f"0:{new_idx}"
     (dst / "meta" / "info.json").write_text(json.dumps(info, indent=4))
 
