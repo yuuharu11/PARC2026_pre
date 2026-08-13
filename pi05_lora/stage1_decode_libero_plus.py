@@ -13,6 +13,7 @@ video_utils.decode_video_frames helper.
 from __future__ import annotations
 
 import argparse
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +21,13 @@ import pandas as pd
 from lerobot.datasets import video_utils
 
 ROOT = Path("/work/PARC2026_data/lerobot/lerobot/libero_plus")
+# Bound on how many packed data/*.parquet files (each holding every frame's
+# state/action arrays for up to ~1000 episodes) are kept in memory at once.
+# A full 14,347-episode decode touches every packed file eventually; without
+# a bound the cache grows to the size of the whole dataset. 4 covers the
+# common case of nearby episode indices sharing a file while still evicting
+# for large out-of-order --episode-list-file runs.
+DATA_CACHE_MAXSIZE = 4
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,7 +57,7 @@ def main() -> None:
     episodes_meta = pd.read_parquet(args.root / "meta" / "episodes" / "chunk-000" / "file-000.parquet")
     episodes_meta = episodes_meta.set_index("episode_index", drop=False)
 
-    data_cache: dict[tuple[int, int], pd.DataFrame] = {}
+    data_cache: OrderedDict[tuple[int, int], pd.DataFrame] = OrderedDict()
 
     def get_data_file(chunk_index: int, file_index: int) -> pd.DataFrame:
         # NB: `dataset_from_index`/`dataset_to_index` in episodes metadata are
@@ -66,9 +74,13 @@ def main() -> None:
         # by the row-level `episode_index` column instead -- correct
         # regardless of which file an episode's rows live in.
         key = (chunk_index, file_index)
-        if key not in data_cache:
-            path = args.root / "data" / f"chunk-{chunk_index:03d}" / f"file-{file_index:03d}.parquet"
-            data_cache[key] = pd.read_parquet(path).set_index("episode_index", drop=False)
+        if key in data_cache:
+            data_cache.move_to_end(key)
+            return data_cache[key]
+        path = args.root / "data" / f"chunk-{chunk_index:03d}" / f"file-{file_index:03d}.parquet"
+        data_cache[key] = pd.read_parquet(path).set_index("episode_index", drop=False)
+        if len(data_cache) > DATA_CACHE_MAXSIZE:
+            data_cache.popitem(last=False)
         return data_cache[key]
 
     if args.episode_list_file is not None:

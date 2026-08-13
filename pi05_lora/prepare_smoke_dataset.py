@@ -57,6 +57,24 @@ def main() -> None:
     for name in ("tasks.jsonl", "stats.json"):
         shutil.copy2(source / "meta" / name, destination / "meta" / name)
 
+    # episodes_stats.jsonl is per-episode metadata that LeRobotDataset (and
+    # this repo's extraction/oversampling tools) load alongside
+    # episodes.jsonl when present. Older v2.0-format sources (this script's
+    # own default --source) don't have it at all -- LeRobotDataset falls
+    # back to the aggregate stats.json for every episode in that case
+    # (backward_compatible_episodes_stats) -- so only copy it when the
+    # source actually provides it, trimmed to the same contiguous prefix as
+    # episodes.jsonl.
+    episodes_stats_src = source / "meta" / "episodes_stats.jsonl"
+    if episodes_stats_src.exists():
+        all_stats = [
+            json.loads(line) for line in episodes_stats_src.read_text().splitlines() if line.strip()
+        ]
+        stats_by_index = {row["episode_index"]: row for row in all_stats}
+        (destination / "meta" / "episodes_stats.jsonl").write_text(
+            "".join(json.dumps(stats_by_index[i]) + "\n" for i in expected)
+        )
+
     info = json.loads((source / "meta" / "info.json").read_text())
     info["total_episodes"] = args.episodes
     info["total_frames"] = sum(row["length"] for row in episode_rows)
