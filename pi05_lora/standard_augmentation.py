@@ -43,8 +43,11 @@ class PerturbationRobustnessAugmentation(transforms.DataTransformFn):
 
     # camera_view_shift analog: crop scale range (fraction of original H/W kept)
     crop_scale: tuple[float, float] = (0.9, 1.0)
-    # observation_noise analog: additive Gaussian pixel noise, std in 0-255 scale
-    image_noise_std: float = 6.0
+    # observation_noise analog: additive Gaussian pixel noise, std in 0-1 scale
+    # (LeRobot stores images as float32 CHW already normalized to [0, 1] --
+    # see openpi/src/openpi/policies/libero_policy.py's _parse_image, which
+    # does the uint8/HWC conversion downstream of this transform)
+    image_noise_std: float = 6.0 / 255.0
     # robot_init_pos_noise / object_pos_noise analog: additive Gaussian noise
     # on the normalized proprioceptive state vector
     state_noise_std: float = 0.02
@@ -60,7 +63,8 @@ class PerturbationRobustnessAugmentation(transforms.DataTransformFn):
             if key not in out:
                 continue
             img = np.asarray(out[key]).astype(np.float32)
-            h, w = img.shape[:2]
+            # CHW: crop the last two axes (H, W), keep channel axis (0) intact.
+            h, w = img.shape[-2:]
 
             # camera_view_shift analog: random crop; downstream ResizeImages
             # (image_tools.resize_with_pad) accepts arbitrary input sizes and
@@ -69,11 +73,11 @@ class PerturbationRobustnessAugmentation(transforms.DataTransformFn):
             ch, cw = max(1, int(h * scale)), max(1, int(w * scale))
             top = np.random.randint(0, h - ch + 1)
             left = np.random.randint(0, w - cw + 1)
-            img = img[top : top + ch, left : left + cw]
+            img = img[:, top : top + ch, left : left + cw]
 
             # observation_noise analog: sensor-noise-like pixel jitter.
-            img = img + np.random.normal(0.0, self.image_noise_std, size=img.shape)
-            out[key] = np.clip(img, 0, 255).astype(np.uint8)
+            img = img + np.random.normal(0.0, self.image_noise_std, size=img.shape).astype(np.float32)
+            out[key] = np.clip(img, 0.0, 1.0).astype(np.float32)
 
         if self.state_key in out:
             state = np.asarray(out[self.state_key]).astype(np.float32)
