@@ -12,6 +12,7 @@ import argparse
 import dataclasses
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -106,8 +107,8 @@ def main() -> None:
     args = parse_args()
     if args.steps < 1 or args.batch_size < 1:
         raise ValueError("steps and batch-size must be positive")
-    if args.jerk_loss_weight < 0:
-        raise ValueError("jerk-loss-weight must be non-negative")
+    if not math.isfinite(args.jerk_loss_weight) or args.jerk_loss_weight < 0:
+        raise ValueError("jerk-loss-weight must be a finite, non-negative number")
 
     openpi_root = args.openpi_root.resolve()
     base_checkpoint = args.base_checkpoint.resolve()
