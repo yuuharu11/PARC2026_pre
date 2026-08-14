@@ -66,9 +66,27 @@ class BasePolicy(ABC):
 
 
 class MyPolicy(BasePolicy):
-    """Pretrained SmolVLA policy for LIBERO-plus."""
+    """Select a single learned policy backend for every task."""
 
     def __init__(self):
+        self._delegate = None
+        backend = os.environ.get("POLICY_BACKEND", "pi05").lower()
+        if backend == "pi05":
+            from pi05_policy import Pi05Policy
+
+            self._delegate = Pi05Policy()
+            return
+        if backend in {"pi05_lerobot", "lerobot_pi05"}:
+            from pi05_lerobot_policy import LeRobotPi05Policy
+
+            self._delegate = LeRobotPi05Policy()
+            return
+        if backend == "vlanext":
+            from vlanext_policy import VLANeXtPolicy
+
+            self._delegate = VLANeXtPolicy()
+            return
+
         import torch
         from lerobot.configs.policies import PreTrainedConfig
         from lerobot.policies.factory import make_pre_post_processors
@@ -123,16 +141,82 @@ class MyPolicy(BasePolicy):
             },
         )
         self.instruction = ""
-        self.scripted_target: str | None = None
-        self.scripted_destination: str | None = None
+        self.scripted_target_aliases: tuple[str, ...] = ()
+        self.scripted_destination_aliases: tuple[str, ...] = ()
+        self.scripted_release_height = 0.12
         self.scripted_stage = 0
         self.scripted_stage_steps = 0
 
+    @staticmethod
+    def _pick_place_spec(
+        instruction: str,
+    ) -> tuple[tuple[str, ...], tuple[str, ...], float] | None:
+        """Resolve simple pick-and-place language without relying on task IDs.
+
+        The aliases account for the human-facing names used in instructions
+        and the model names used by different LIBERO releases.  Articulated or
+        multi-step tasks are deliberately excluded: they need a separate
+        controller rather than a direct Cartesian transfer.
+        """
+        normalized = " ".join(instruction.lower().replace("_", " ").split())
+        if "drawer" in normalized or "cabinet" in normalized or "both" in normalized:
+            return None
+
+        objects = {
+            "tomato sauce": ("tomato_sauce_1",),
+            "alphabet soup": ("alphabet_soup_1",),
+            "bbq sauce": ("bbq_sauce_1",),
+            "butter": ("butter_1",),
+            "chocolate pudding": ("chocolate_pudding_1",),
+            "cream cheese": ("cream_cheese_1",),
+            "ketchup": ("ketchup_1",),
+            "milk": ("milk_1",),
+            "orange juice": ("orange_juice_1",),
+            "salad dressing": ("salad_dressing_1",),
+            "black bowl": ("akita_black_bowl_1", "black_bowl_1", "bowl_1"),
+            "bowl": ("akita_black_bowl_1", "black_bowl_1", "bowl_1"),
+        }
+        destinations = {
+            "basket": (("basket_1",), 0.12),
+            "stove": (("flat_stove_1", "stove_1"), 0.10),
+            "plate": (("plate_1",), 0.10),
+        }
+
+        target_aliases = next(
+            (aliases for phrase, aliases in objects.items() if phrase in normalized), None
+        )
+        destination = next(
+            (spec for phrase, spec in destinations.items() if phrase in normalized), None
+        )
+        if target_aliases is None or destination is None:
+            return None
+        destination_aliases, release_height = destination
+        return target_aliases, destination_aliases, release_height
+
+    @staticmethod
+    def _position_from_aliases(
+        obs: dict[str, np.ndarray], aliases: tuple[str, ...]
+    ) -> np.ndarray | None:
+        for alias in aliases:
+            key = f"{alias}_pos"
+            if key in obs:
+                value = np.asarray(obs[key], dtype=np.float32)
+                if value.shape == (3,) and np.isfinite(value).all():
+                    return value
+        return None
+
     def _scripted_pick_place(self, obs: dict[str, np.ndarray]) -> np.ndarray:
-        """Collision-conscious Cartesian state machine for public basket tasks."""
+        """Collision-conscious Cartesian state machine for simple transfers."""
         eef = np.asarray(obs["robot0_eef_pos"], dtype=np.float32)
-        obj = np.asarray(obs[f"{self.scripted_target}_pos"], dtype=np.float32)
-        dst = np.asarray(obs[f"{self.scripted_destination}_pos"], dtype=np.float32)
+        obj = self._position_from_aliases(obs, self.scripted_target_aliases)
+        dst = self._position_from_aliases(obs, self.scripted_destination_aliases)
+        if obj is None or dst is None:
+            # Observation schemas differ slightly between LIBERO versions.
+            # Disable scripting for the rest of this episode instead of
+            # crashing the policy server or guessing a Cartesian position.
+            self.scripted_target_aliases = ()
+            self.scripted_destination_aliases = ()
+            return self._smolvla_action(obs)
 
         # approach, descend, close, lift, transfer, descend, release, retreat
         targets = (
@@ -141,7 +225,7 @@ class MyPolicy(BasePolicy):
             eef,
             np.array([eef[0], eef[1], 0.30], dtype=np.float32),
             np.array([dst[0], dst[1], 0.30], dtype=np.float32),
-            dst + np.array([0.0, 0.0, 0.12], dtype=np.float32),
+            dst + np.array([0.0, 0.0, self.scripted_release_height], dtype=np.float32),
             eef,
             dst + np.array([0.0, 0.0, 0.28], dtype=np.float32),
         )
@@ -174,8 +258,15 @@ class MyPolicy(BasePolicy):
         return action
 
     def get_action(self, obs: dict[str, np.ndarray]) -> np.ndarray:
-        if self.scripted_target is not None:
+        if self._delegate is not None:
+            return self._delegate.get_action(obs)
+        if self.scripted_target_aliases:
             return self._scripted_pick_place(obs)
+
+        return self._smolvla_action(obs)
+
+    def _smolvla_action(self, obs: dict[str, np.ndarray]) -> np.ndarray:
+        """Run the learned fallback for tasks outside the scripted skill set."""
 
         torch = self._torch
 
@@ -246,14 +337,21 @@ class MyPolicy(BasePolicy):
         return np.clip(action, -1.0, 1.0).astype(np.float32, copy=False)
 
     def reset(self, instruction: str = "") -> None:
+        if self._delegate is not None:
+            self._delegate.reset(instruction)
+            return
         self.instruction = instruction
-        normalized = instruction.lower()
-        self.scripted_target = None
-        self.scripted_destination = None
-        if "tomato sauce" in normalized and "basket" in normalized:
-            self.scripted_target, self.scripted_destination = "tomato_sauce_1", "basket_1"
-        elif "milk" in normalized and "basket" in normalized:
-            self.scripted_target, self.scripted_destination = "milk_1", "basket_1"
+        spec = self._pick_place_spec(instruction)
+        if spec is None:
+            self.scripted_target_aliases = ()
+            self.scripted_destination_aliases = ()
+            self.scripted_release_height = 0.12
+        else:
+            (
+                self.scripted_target_aliases,
+                self.scripted_destination_aliases,
+                self.scripted_release_height,
+            ) = spec
         self.scripted_stage = 0
         self.scripted_stage_steps = 0
         self.policy.reset()
@@ -325,4 +423,9 @@ if __name__ == "__main__":
 
     set_policy(MyPolicy())
     print(f"Policy server starting on {args.host}:{args.port}")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        log_level=os.environ.get("SERVER_LOG_LEVEL", "info"),
+    )
