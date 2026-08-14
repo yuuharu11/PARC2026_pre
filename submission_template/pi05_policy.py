@@ -99,6 +99,22 @@ class Pi05Policy:
         self._queue: deque[np.ndarray] = deque()
         self._execute = int(os.environ.get("PI05_ACTION_CHUNK", "5"))
 
+        # Temporal ensembling (ACT-style, Zhao et al. 2023): instead of hard-cutting
+        # to a fresh chunk every _execute steps (which can jump to a differently
+        # sampled trajectory since pi0.5's flow-matching head draws fresh noise each
+        # call), re-infer more often and blend every still-valid historical chunk's
+        # prediction for the current timestep, weighted toward fresher chunks. This
+        # smooths chunk-boundary discontinuities without touching the model/sampling
+        # loop itself. Opt-in and off by default -- PI05_TEMPORAL_ENSEMBLE=0 (or
+        # unset) reproduces the exact pre-existing behavior above, byte-for-byte.
+        self._ensemble = os.environ.get("PI05_TEMPORAL_ENSEMBLE", "0") not in {"0", "", "false", "False"}
+        self._ensemble_stride = max(1, int(os.environ.get("PI05_ENSEMBLE_STRIDE", "2")))
+        self._ensemble_tau = float(os.environ.get("PI05_ENSEMBLE_TAU", "0.5"))
+        # each entry: [age_in_timesteps, chunk] -- age indexes which row of chunk
+        # (shape [action_horizon, 7]) predicts the current timestep.
+        self._history: list[list] = []
+        self._steps_since_infer = 0
+
         # JAX compilation takes longer than the 10-second request limit. Compile
         # before uvicorn exposes /health; load + compile remains within the
         # competition's 120-second startup allowance on the measured A100.
@@ -115,6 +131,8 @@ class Pi05Policy:
     def reset(self, instruction: str = "") -> None:
         self._instruction = instruction
         self._queue.clear()
+        self._history.clear()
+        self._steps_since_infer = 0
 
     def _input(self, obs: dict[str, np.ndarray]) -> dict:
         state = np.concatenate(
@@ -132,12 +150,43 @@ class Pi05Policy:
         }
 
     def get_action(self, obs: dict[str, np.ndarray]) -> np.ndarray:
-        if not self._queue:
-            actions = np.asarray(self._policy.infer(self._input(obs))["actions"], dtype=np.float32)
-            if actions.ndim != 2 or actions.shape[1] != 7:
-                raise ValueError(f"pi0.5 returned invalid action chunk shape {actions.shape}")
-            self._queue.extend(actions[: self._execute])
-        action = self._queue.popleft()
+        if self._ensemble:
+            action = self._get_action_ensembled(obs)
+        else:
+            if not self._queue:
+                actions = np.asarray(self._policy.infer(self._input(obs))["actions"], dtype=np.float32)
+                if actions.ndim != 2 or actions.shape[1] != 7:
+                    raise ValueError(f"pi0.5 returned invalid action chunk shape {actions.shape}")
+                self._queue.extend(actions[: self._execute])
+            action = self._queue.popleft()
         if not np.isfinite(action).all():
             raise ValueError("pi0.5 returned a non-finite action")
         return np.clip(action, -1.0, 1.0).astype(np.float32, copy=False)
+
+    def _get_action_ensembled(self, obs: dict[str, np.ndarray]) -> np.ndarray:
+        if self._steps_since_infer >= self._ensemble_stride or not self._history:
+            actions = np.asarray(self._policy.infer(self._input(obs))["actions"], dtype=np.float32)
+            if actions.ndim != 2 or actions.shape[1] != 7:
+                raise ValueError(f"pi0.5 returned invalid action chunk shape {actions.shape}")
+            self._history.append([0, actions])
+            self._steps_since_infer = 0
+        self._steps_since_infer += 1
+
+        # Blend every still-valid chunk's prediction for *this* timestep, weighted
+        # toward fresher chunks (age 0 = just inferred, predicts this step first).
+        weights = []
+        preds = []
+        for entry in self._history:
+            age, chunk = entry
+            if age < chunk.shape[0]:
+                weights.append(math.exp(-self._ensemble_tau * age))
+                preds.append(chunk[age])
+        weights_arr = np.asarray(weights, dtype=np.float64)
+        weights_arr /= weights_arr.sum()
+        action = np.tensordot(weights_arr, np.stack(preds), axes=1).astype(np.float32)
+
+        for entry in self._history:
+            entry[0] += 1
+        self._history = [e for e in self._history if e[0] < e[1].shape[0]]
+
+        return action
