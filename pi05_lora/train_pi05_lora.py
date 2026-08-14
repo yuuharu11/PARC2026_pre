@@ -12,6 +12,7 @@ import argparse
 import dataclasses
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -45,6 +46,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--save-interval", type=int, default=10)
     parser.add_argument("--peak-lr", type=float, default=1e-5)
+    parser.add_argument(
+        "--jerk-loss-weight",
+        type=float,
+        default=0.0,
+        help="training-only weight for the reconstructed-action second-difference penalty (default: off)",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
@@ -100,6 +107,8 @@ def main() -> None:
     args = parse_args()
     if args.steps < 1 or args.batch_size < 1:
         raise ValueError("steps and batch-size must be positive")
+    if not math.isfinite(args.jerk_loss_weight) or args.jerk_loss_weight < 0:
+        raise ValueError("jerk-loss-weight must be a finite, non-negative number")
 
     openpi_root = args.openpi_root.resolve()
     base_checkpoint = args.base_checkpoint.resolve()
@@ -125,7 +134,6 @@ def main() -> None:
 
     import flax.nnx as nnx
 
-    from openpi.models import pi0_config
     from openpi.shared import nnx_utils
     from openpi.training import config as train_config
     from openpi.training import optimizer
@@ -133,14 +141,16 @@ def main() -> None:
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from augmented_data_config import AugmentedLeRobotLiberoDataConfig
+    from jerk_loss import JerkPi0Config
     from standard_augmented_data_config import StandardAugmentedLeRobotLiberoDataConfig
 
-    model = pi0_config.Pi0Config(
+    model = JerkPi0Config(
         pi05=True,
         action_horizon=10,
         discrete_state_input=False,
         paligemma_variant="gemma_2b_lora",
         action_expert_variant="gemma_300m_lora",
+        jerk_loss_weight=args.jerk_loss_weight,
     )
     warmup_steps = min(100, max(1, args.steps // 10))
     if args.augment:
@@ -208,6 +218,7 @@ def main() -> None:
         "steps": args.steps,
         "batch_size": args.batch_size,
         "peak_lr": args.peak_lr,
+        "jerk_loss_weight": args.jerk_loss_weight,
         "seed": args.seed,
         "augment": args.augment,
         "augment_prob": args.augment_prob if args.augment else None,
