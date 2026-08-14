@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import shutil
 import sys
@@ -68,17 +69,29 @@ def main() -> None:
     if args.out_dir.exists():
         raise FileExistsError(f"--out-dir already exists: {args.out_dir}")
 
+    candidates = [parse_checkpoint_arg(c) for c in args.checkpoints]
+    for path, _ in candidates:
+        if not (path / "params").is_dir():
+            raise FileNotFoundError(f"no params/ subdir in checkpoint: {path}")
+    for path, weight in candidates:
+        if not math.isfinite(weight):
+            raise ValueError(f"non-finite weight for {path}: {weight}")
+    total_weight = sum(w for _, w in candidates)
+    if not math.isfinite(total_weight) or total_weight == 0:
+        raise ValueError(f"sum of --checkpoint weights must be finite and nonzero, got {total_weight}")
+    if not 0 <= args.assets_from < len(candidates):
+        raise ValueError(f"--assets-from={args.assets_from} out of range for {len(candidates)} checkpoints")
+    assets_src = candidates[args.assets_from][0] / "assets"
+    if not assets_src.is_dir():
+        raise FileNotFoundError(
+            f"--assets-from={args.assets_from} ({candidates[args.assets_from][0]}) has no assets/ directory"
+        )
+
     sys.path.insert(0, str(args.openpi_root.resolve() / "src"))
     import jax
     import numpy as np
     import orbax.checkpoint as ocp
     from openpi.models import model as _model
-
-    candidates = [parse_checkpoint_arg(c) for c in args.checkpoints]
-    for path, _ in candidates:
-        if not (path / "params").is_dir():
-            raise FileNotFoundError(f"no params/ subdir in checkpoint: {path}")
-    total_weight = sum(w for _, w in candidates)
 
     print("Restoring params:")
     param_trees = []
@@ -102,9 +115,7 @@ def main() -> None:
     with ocp.PyTreeCheckpointer() as ckptr:
         ckptr.save(out_params_dir, {"params": averaged})
 
-    assets_src = candidates[args.assets_from][0] / "assets"
-    if assets_src.is_dir():
-        shutil.copytree(assets_src, args.out_dir / "assets")
+    shutil.copytree(assets_src, args.out_dir / "assets")
 
     manifest = {
         "config": "pi05_libero_lora",
