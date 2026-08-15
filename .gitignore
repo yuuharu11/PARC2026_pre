@@ -13,3 +13,9 @@ wandb/
 /submission_template/model_weights/
 /submission_template/lerobot/
 /submission_zip/
+
+# LaTeX build byproducts
+*.aux
+*.log
+*.out
+*.toc
