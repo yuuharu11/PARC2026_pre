@@ -19,3 +19,4 @@ wandb/
 *.log
 *.out
 *.toc
+/PARC2026_track1_report.pdf
