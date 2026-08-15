@@ -1,6 +1,6 @@
 % Build with: xelatex PARC2026_track1_report.tex (twice)
 \documentclass[10pt,a4paper]{article}
-\usepackage[margin=17mm]{geometry}
+\usepackage[margin=14mm]{geometry}
 \usepackage{fontspec}
 \usepackage{xeCJK}
 \usepackage{booktabs}
@@ -24,9 +24,10 @@
 \setsansfont{Noto Sans CJK JP}
 \setmonofont{DejaVu Sans Mono}
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{0.35em}
-\setlist[itemize]{leftmargin=1.5em,itemsep=0.18em,topsep=0.2em}
-\setlist[enumerate]{leftmargin=1.7em,itemsep=0.18em,topsep=0.2em}
+\setlength{\parskip}{0.2em}
+\linespread{0.98}
+\setlist[itemize]{leftmargin=1.4em,itemsep=0.1em,topsep=0.12em}
+\setlist[enumerate]{leftmargin=1.6em,itemsep=0.1em,topsep=0.12em}
 \titleformat{\section}{\large\bfseries\color{blue!45!black}}{\thesection.}{0.5em}{}
 \titleformat{\subsection}{\normalsize\bfseries\color{blue!35!black}}{}{0pt}{}
 \titlespacing*{\section}{0pt}{0.7em}{0.3em}
@@ -38,7 +39,7 @@
 \newcommand{\code}[1]{\texttt{\small #1}}
 % Use \br inside a table cell. Unlike \\, it does not terminate the table row.
 \newcommand{\br}{\newline}
-\renewcommand{\arraystretch}{1.12}
+\renewcommand{\arraystretch}{1.05}
 \newcommand{\reportrow}[2]{\textbf{#1} & #2 \\}
 \newcommand{\tablehead}{\rowcolor{blue!12}\textbf{項目} & \textbf{内容} \\}
 
@@ -52,34 +53,36 @@
 
 \section{学習・推論時の工夫点および試行錯誤}
 
-本提出物はTrack 1の公開4タスクを単一ポリシーで処理するpi0.5-LIBEROのLoRAモデルである。
+本レポートで報告する成功率・衝突率・jerkは、特記なき限りTrack 1の16 episode/task評価による値である。
 
 \subsection{モデル選定}
 
 はじめに事前学習モデルとしてSmolVLAとTurboVLAを検討した。SmolVLAは軽量でLoRA学習も
-容易だったがTrack 1の強い視覚摂動では十分な成功率を得られず実際のロールアウトを確認しても追加学習だけで大幅に改善することは難しいと判断した\cite{smolvla}。次にLIBEROで高い成功率と高速推論を報告するTurboVLAを検討した\cite{turbovla}。TurboVLA自体は約0.2Bパラメータと小型だが公開チェックポイントはLIBEROのsuite別であった。単一方策として統合するには追加学習や複数expertの切替機構が必要となり計算資源と提出条件の両面で採用が難しかった。最終的に異種データのco-trainingによる汎化性能を持つpi0.5\cite{pi05}のLIBERO用チェックポイントを評価したところtrack1の公開4タスクで26/32を達成した。全suiteを単一重みで扱える点も踏まえpi0.5-LIBEROを採用した。
-なおpi0.5-LIBEROのコードとチェックポイントはPhysical Intelligenceが公開するopenpiに含まれているがPyTorch版とJAX版が存在する。この二つは性能が異なっておりJAX版の方がtrack1の公開4タスクで高い成功率を示したためJAX版を採用した\cite{openpi}。
+容易だったが、Track 1の強い視覚摂動では十分な成功率を得られず、実際のロールアウトを確認しても追加学習だけで大幅に改善することは難しいと判断した\cite{smolvla}。次にLIBEROで高い成功率と高速推論を報告するTurboVLAを検討した\cite{turbovla}。TurboVLA自体は約0.2Bパラメータと小型だが、公開チェックポイントはLIBEROのsuite別であった。単一方策として統合するには追加学習や複数expertの切替機構が必要となり、計算資源と提出条件の両面で採用が難しかった。最終的に、異種データのco-trainingによる汎化性能を持つpi0.5\cite{pi05}のLIBERO用チェックポイントを評価したところ、Track 1の公開4タスクで26/32を達成した。全suiteを単一重みで扱える点も踏まえ、pi0.5-LIBEROを採用した。
+なおpi0.5-LIBEROのコードとチェックポイントはPhysical Intelligenceが公開するopenpiに含まれているが、PyTorch版とJAX版が存在する。この二つは性能が異なっており、JAX版の方がTrack 1の公開4タスクで高い成功率を示したためJAX版を採用した\cite{openpi}。
 
 \subsection{学習}
 
-利用可能なデータ量と計算資源を考慮しスクラッチ学習や全パラメータのfine-tuningではなく事前学習済みpi0.5-LIBEROに対するLoRA fine-tuningを採用した。これにより事前学習で得られた汎化性能を維持しながらTrack 1の視覚摂動へ適応させた。
+利用可能なデータ量と計算資源を考慮し、スクラッチ学習や全パラメータのfine-tuningではなく、事前学習済みpi0.5-LIBEROに対するLoRA fine-tuningを採用した。これにより、事前学習で得られた汎化性能を維持しながらTrack 1の視覚摂動へ適応させた。
 
 \begin{itemize}
   \item \textbf{データ変換：}
-    LIBERO-plusのデータは複数episodeをparquet chunkに格納した形式で提供されている。これをJAX版openpiで学習できるようepisode単位にデコードしLeRobotDatasetとして再構築した。その過程でchunk境界のindex処理とArrow schema metadataの欠落も修正した。
+    LIBERO-plusのデータは複数episodeをparquet chunkに格納した形式で提供されている。これをJAX版openpiで学習できるようepisode単位にデコードし、LeRobotDatasetとして再構築した。その過程で、chunk境界のindex処理とArrow schema metadataの欠落も修正した。
 
   \item \textbf{学習データとデータ拡張：}
-    初期学習モデルを評価したところTrack 1の中でもtomato-sauceタスクで特に低い成功率を示した。そこでこのタスクを分析したところ背景の色彩と明度に強い摂動が加えられていたため暗色化や色調変換によるaugmentationを検証した。しかしaugmentationなしの成功率43.8\%に対し適用時は6.2--31.2\%となりかえって性能が低下した。
+    初期学習モデルを評価したところ、Track 1の中でもtomato-sauceタスクで特に低い成功率（43.8\%）を示した。そこでこのタスクを分析したところ、背景の色彩と明度に強い摂動が加えられていたため、暗色化や色調変換によるaugmentationを検証した。しかし、初期学習モデルのaugmentationなしの成功率43.8\%に対し、適用時は6.2--31.2\%となり、かえって性能が低下した。
 
-    またtrack1の4タスクだけではなく40タスクへ学習対象を広げ12,000--20,000 stepsの比較学習を行った。LIBERO-plus上のvalidation成功率は向上したもののOmniCampus上の評価スコアは低下した（狭域レシピの0.391に対し広域データ／augmentation適用版は0.260--0.313）。詳細に分析するとタスク数の増加によって公開4タスクの学習信号が希釈されるとともにaugmentationを強めるほどaction jerkが増加していた。この結果から評価では成功率だけでなく衝突を避けて安定した軌道を生成することも重要だと判断した。最終学習には公開4タスクの実データ530 episodeのみを使用しaugmentationは適用しなかった。
+    一方でtomato-sauceは背景摂動が最も強く、視覚摂動への頑健性を学ぶうえで有効なタスクだと判断した。そこで最終学習ではこのタスクのデータを重点的に増やし、他タスク各60 episodeに対しtomato-sauceは350 episodeとした。
+
+    またTrack 1の4タスクだけではなく40タスクへ学習対象を広げ、12,000--20,000 stepsの比較学習を行った。LIBERO-plus上のvalidation成功率は向上したものの、OmniCampus上の評価スコアは低下した（狭域レシピの0.391に対し、広域データ／augmentation適用版は0.260--0.313）。詳細に分析すると、タスク数の増加によって公開4タスクの学習信号が希釈されるとともに、augmentationを強めるほどaction jerkが増加していた。この結果からも、評価では成功率だけでなく、衝突を避けて安定した軌道を生成することが重要だと確認できた。最終学習には公開4タスクの実データ530 episodeのみを使用し、augmentationは適用しなかった。
 
   \item \textbf{軌道の滑らかさ：}
-    タスクを増やしたときにスコアが下がった現象について成功率だけではなくaction jerkが重要な評価指標になっていると考え予測actionのjerkを抑える補助損失を導入した。しかし成功率と衝突率は改善しなかった。また複数のaction chunkを時間方向に平均する方式も検討したがjerkが4.59から3.47へ低下した一方成功率は85.9\%から81.2\%へ
-    衝突率は3.1\%から14.1\%へ悪化し実行時間も増加したため採用しなかった。
+    上記の通り、成功率を高めてもaction jerkの増加がスコアを損なう場合があると分かったため、予測actionのjerkを抑える補助損失を導入した。しかし成功率と衝突率は改善しなかった。また複数のaction chunkを時間方向に平均する方式も検討したが、jerkが4.59から3.47へ低下した一方、成功率は85.9\%から81.2\%へ、
+    衝突率は3.1\%から14.1\%へ悪化し、実行時間も増加したため採用しなかった。
 
   \item \textbf{最終的な学習方式：}
-    同一条件の学習でも評価結果に最大約11ポイントの変動が確認された。
-    そこで単一チェックポイントへの依存を抑えるためstep 700・750・775の
+    同一条件の学習でも、評価結果に最大約11ポイントの変動が確認された。
+    そこで単一チェックポイントへの依存を抑えるため、step 700・750・775の
     LoRAパラメータを2:1:1で平均したweighted model soupを提出モデルとした。
     このweighted soup自体のローカル16 episode/task評価は成功率85.9\%
     （drawer 93.8\%・tomato-sauce 56.3\%・milk 100\%・stove 93.8\%）、
@@ -90,17 +93,19 @@
 
 \subsection{推論}
 
-推論では1回の推論で10ステップのaction chunkを生成しそのうち先頭5ステップを
-実行してから再推論するreceding-horizon方式を採用した。全10ステップを実行する場合より
-観測変化へ早く追従でき毎ステップ推論する場合より計算時間を抑えられる。
+推論では、1回の推論で10ステップのaction chunkを生成し、そのうち先頭5ステップを
+実行してから再推論するreceding-horizon方式を採用した。先頭何ステップを実行するかは
+追従性と計算時間のトレードオフを決めるため、実行ステップ数を変えて比較した。
+全10ステップを実行する場合は観測変化への追従が遅れ、逆に実行ステップ数を過度に短くすると
+再推論の頻度が上がり計算時間が増加する。比較の結果、先頭5ステップを実行する構成が
+追従性と計算時間のバランスの点で最も良好であったため、これを採用した。
 
-入力画像には学習時と同じ180度回転とpadding付きresizeを適用した。ロボット状態の
-手先姿勢はEuler角ではなくaxis-angleへ変換し学習時の前処理と一致させた。
-またJAXのJITコンパイルをサーバー起動時に完了させることで評価中の各推論を
-10秒以内に収めた。出力actionは有限値であることを確認したうえで
+入力画像には、学習時と同じ180度回転とpadding付きresizeを適用した。ロボット状態の
+手先姿勢はEuler角ではなくaxis-angleへ変換し、学習時の前処理と一致させた。
+またJAXのJITコンパイルをサーバー起動時に完了させることで、評価中の各推論を
+10秒以内に収めた。出力actionは有限値であることを確認したうえで、
 $[-1,1]$へclipしている。
 
-\clearpage
 \small
 \section{モデル情報}
 
@@ -140,7 +145,7 @@ $[-1,1]$へclipしている。
   HF Hubの\code{lerobot/libero\_plus}（LIBERO-plus）をベースに使用する
   独自の2段階パイプラインでopenpi形式へ変換した。公開4タスクの実演のみを使用し独自収集データ・生成データ・最終学習時の合成augmentationはない}
 \reportrow{件数・タスク数・エピソード数}{
-  530エピソード／74,404フレーム／4タスク／20 fps／画像256$\times$256。最終的な内訳はdrawer 60・milk 60・stove 60・tomato-sauce 350エピソードとした。}
+  530エピソード／74,404フレーム／4タスク／20 fps／画像256$\times$256。最終的な内訳はdrawer 60・milk 60・stove 60・tomato-sauce 350エピソードとした。tomato-sauceは背景摂動が最も強く視覚摂動への頑健性の学習に有効なため重点的に増やした。}
 \reportrow{学習方法}{
   pi0.5-LIBEROへのflow-matching模倣学習によるLoRAファインチューニングを行った。
   optimizerはAdamW。勾配ノルム上限は1.0。学習率はcosine decayでスケジューリングする。}
