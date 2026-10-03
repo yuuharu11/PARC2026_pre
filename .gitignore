@@ -11,6 +11,8 @@ wandb/
 
 # Local model and submission artifacts (too large for Git; keep them on disk).
 /submission_template/model_weights/
+/submission_template/pi05_weights/
+/submission_template/pi05_lerobot_weights/
 /submission_template/lerobot/
 /submission_zip/
 
