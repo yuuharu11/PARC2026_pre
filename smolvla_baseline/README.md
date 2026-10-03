@@ -1,4 +1,8 @@
-# 参考例（examples）
+# SmolVLA ベースライン
+
+初期に検討した SmolVLA の LoRA 追加学習。最終提出モデル（pi0.5）に切り替える前のベースラインで、
+経緯と結果は [docs/smolvla_baseline.md](../docs/smolvla_baseline.md) を参照。
+ノートブックは運営配布の参考例、ローカル実行用スクリプトは本プロジェクトで追加したもの。
 
 | ファイル | 内容 |
 |---|---|
@@ -80,7 +84,7 @@ pip install torch==2.9.1 torchvision==0.24.1 \
     --index-url https://download.pytorch.org/whl/cu126
 pip install torchcodec==0.9.1 mujoco==3.7.0
 
-python examples/smolvla_libero_spatial_lora_local.py
+python smolvla_baseline/smolvla_libero_spatial_lora_local.py
 ```
 
 既定では Colab と同じく `/content/` 以下に一式を保存する（root 権限と

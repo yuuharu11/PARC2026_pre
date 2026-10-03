@@ -9,15 +9,16 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from lerobot.datasets import video_utils
+from paths import DATA_ROOT, LIBERO_PLUS_SOURCE
 
-ROOT_ = __import__("pathlib").Path("/work/PARC2026_data/lerobot/lerobot/libero_plus")
+ROOT_ = LIBERO_PLUS_SOURCE
 
 
 def main() -> None:
     episodes_meta = pd.read_parquet(ROOT_ / "meta" / "episodes" / "chunk-000" / "file-000.parquet")
     episodes_meta = episodes_meta.set_index("episode_index", drop=False)
 
-    remaining = np.load("/work/PARC2026_data/tomato_remaining_episodes.npy")
+    remaining = np.load(DATA_ROOT / "tomato_remaining_episodes.npy")
 
     results = []
     for episode_index in remaining:
@@ -44,7 +45,7 @@ def main() -> None:
     print(f"count below 50: {(vals < 50).sum()}, below 40: {(vals < 40).sum()}, below 35: {(vals < 35).sum()}")
 
     np.save(
-        "/work/PARC2026_data/tomato_remaining_brightness.npy",
+        DATA_ROOT / "tomato_remaining_brightness.npy",
         np.array(results, dtype=[("episode_index", "i8"), ("brightness", "f8")]),
     )
 

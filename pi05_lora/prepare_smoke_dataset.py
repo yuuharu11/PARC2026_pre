@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+from paths import LEROBOT_HOME
 
 
 def parse_args() -> argparse.Namespace:
@@ -14,12 +15,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source",
         type=Path,
-        default=Path("/work/PARC2026_data/lerobot/physical-intelligence/libero"),
+        default=LEROBOT_HOME / "physical-intelligence" / "libero",
     )
     parser.add_argument(
         "--destination",
         type=Path,
-        default=Path("/work/PARC2026_data/lerobot/physical-intelligence/libero-smoke"),
+        default=LEROBOT_HOME / "physical-intelligence" / "libero-smoke",
     )
     parser.add_argument("--episodes", type=int, default=914)
     return parser.parse_args()

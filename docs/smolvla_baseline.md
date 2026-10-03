@@ -3,7 +3,7 @@
 ## 結論
 
 最初の提出モデルは `lerobot/smolvla_libero_plus` を土台にし、
-`examples/smolvla_libero_plus_multisuite_lora_local.py` で40個の基本命令をLoRA学習した
+`smolvla_baseline/smolvla_libero_plus_multisuite_lora_local.py` で40個の基本命令をLoRA学習した
 マージ済みモデルとする。公開4タスクだけを記憶する方策より、非公開タスクへの言語・物体・
 ゴールの汎化を期待できるためである。
 
@@ -43,7 +43,7 @@ Track 1重点LoRAと、観測中の物体位置を利用する衝突回避型pic
 GPU環境で全スイート学習スクリプトを実行する。
 
 ```bash
-python examples/smolvla_libero_plus_multisuite_lora_local.py
+python smolvla_baseline/smolvla_libero_plus_multisuite_lora_local.py
 ```
 
 既定では40命令のうち公開4タスクに対応する命令を各24 episode、残りを各4 episode、

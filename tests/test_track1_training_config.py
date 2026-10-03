@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SCRIPT = ROOT / "examples" / "smolvla_libero_plus_multisuite_lora_local.py"
+SCRIPT = ROOT / "smolvla_baseline" / "smolvla_libero_plus_multisuite_lora_local.py"
 TASK_CSV = ROOT / "compe" / "t1" / "T1_TASKS.csv"
 
 

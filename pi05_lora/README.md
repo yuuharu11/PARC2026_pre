@@ -1,16 +1,36 @@
 # pi0.5 LIBERO LoRA
 
-The baseline submission remains untouched.  Training data and checkpoints are
-kept outside the repository:
+## Files
 
-- dataset: `/work/PARC2026_data/lerobot/physical-intelligence/libero`
-- checkpoints: `/work/PARC2026_training/checkpoints/pi05_libero_lora`
+| Role | Files |
+|---|---|
+| Data pipeline | `stage1_decode_libero_plus.py`, `stage2_build_openpi_dataset.py`, `merge_shard_datasets.py`, `extract_task_dataset.py`, `oversample_task.py`, `build_uniform_task_dataset.py`, `prepare_smoke_dataset.py` |
+| Training | `train_pi05_lora.py`, `verify_checkpoint.py`, `paths.py` |
+| Model soup (final submission) | `soup_checkpoints.py` |
+| Experiments (not used in the final model) | `texture_perturbation.py` + `augmented_data_config.py` (`--augment`), `standard_augmentation.py` + `standard_augmented_data_config.py` (`--standard-augment`), `jerk_loss.py` (`--jerk-loss-weight`) |
+| Diagnostics | `diagnose_tomato_failure.py`, `scan_tomato_brightness.py` |
+
+The scripts import each other as siblings, so keep them in this directory and
+run them by path (e.g. `python pi05_lora/train_pi05_lora.py`).
+
+Training data and checkpoints are kept outside the repository. Their locations
+are defined in [`paths.py`](paths.py) and can be overridden with environment
+variables:
+
+| Variable | Default | Contents |
+|---|---|---|
+| `PARC_DATA_ROOT` | `/work/PARC2026_data` | LIBERO-plus source and openpi-format datasets (`lerobot/` below it) |
+| `PARC_TRAINING_ROOT` | `/work/PARC2026_training` | training checkpoints (`checkpoints/` below it) |
+| `OPENPI_ROOT` | `/tmp/openpi` | openpi checkout with its own `.venv` |
+| `OPENPI_DATA_HOME` | `/tmp/openpi-data` | openpi asset cache holding the base pi0.5-LIBERO checkpoint |
+
+Every script also accepts explicit `--...` path arguments.
 
 Run the 20-step smoke test with the openpi environment and an A100:
 
 ```bash
 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
-/tmp/openpi/.venv/bin/python pi05_lora/train_pi05_lora.py \
+$OPENPI_ROOT/.venv/bin/python pi05_lora/train_pi05_lora.py \
   --steps 20 --batch-size 8 --save-interval 10 --overwrite
 ```
 
@@ -18,8 +38,8 @@ If the full 40-task download is still in progress, make a no-copy subset from
 the available contiguous prefix and use it only for a training smoke test:
 
 ```bash
-/tmp/openpi/.venv/bin/python pi05_lora/prepare_smoke_dataset.py
-/tmp/openpi/.venv/bin/python pi05_lora/train_pi05_lora.py \
+$OPENPI_ROOT/.venv/bin/python pi05_lora/prepare_smoke_dataset.py
+$OPENPI_ROOT/.venv/bin/python pi05_lora/train_pi05_lora.py \
   --dataset-repo-id physical-intelligence/libero-smoke \
   --steps 20 --batch-size 8 --save-interval 10 --overwrite
 ```
@@ -27,7 +47,7 @@ the available contiguous prefix and use it only for a training smoke test:
 Restore the resulting LoRA-shaped checkpoint and compile one inference:
 
 ```bash
-/tmp/openpi/.venv/bin/python pi05_lora/verify_checkpoint.py
+$OPENPI_ROOT/.venv/bin/python pi05_lora/verify_checkpoint.py
 ```
 
 The submission adapter auto-detects a LoRA checkpoint when

@@ -1,7 +1,7 @@
 """
 Local SmolVLA LoRA training across all 40 LIBERO-plus training tasks.
 
-This script extends the local port of examples/smolvla_libero_spatial_lora.ipynb
+This script extends the local port of smolvla_baseline/smolvla_libero_spatial_lora.ipynb
 from the 10 Spatial tasks to all 40 available Spatial/Object/Goal/libero_10
 task instructions. It selects an equal number of evenly spaced episodes per
 task, then evaluates before/after performance across all four suites by
@@ -10,11 +10,11 @@ task ID in their actual suite (each suite's task list is hundreds of
 perturbation variants per base instruction, not distinct instructions -- see
 the comment above CATEGORY_PREFERENCE). Colab-only operations and bare-venv
 compatibility fixes from smolvla_libero_spatial_lora_local.py are preserved;
-see examples/README.md.
+see smolvla_baseline/README.md.
 
 Requires: a Python 3.12 venv with torch==2.9.1+cu126,
 torchvision==0.24.1+cu126, torchcodec==0.9.1, and mujoco==3.7.0
-preinstalled (see examples/README.md), run as root with network access
+preinstalled (see smolvla_baseline/README.md), run as root with network access
 (apt-get, git clone, HF downloads) and ~20GB free disk under /content.
 """
 

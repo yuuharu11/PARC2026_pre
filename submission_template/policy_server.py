@@ -81,11 +81,6 @@ class MyPolicy(BasePolicy):
 
             self._delegate = LeRobotPi05Policy()
             return
-        if backend == "vlanext":
-            from vlanext_policy import VLANeXtPolicy
-
-            self._delegate = VLANeXtPolicy()
-            return
 
         import torch
         from lerobot.configs.policies import PreTrainedConfig

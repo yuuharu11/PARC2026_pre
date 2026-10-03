@@ -1,145 +1,118 @@
-# PARC 2026 — 予選配布環境
+# PARC 2026 予選 Track 1：視覚摂動に頑健なロボット操作方策
 
-PARC 2026予選のための配布環境である。
-本リポジトリを用いることで、参加者が実装したポリシーを example タスク上で
-実行し、提出前にローカル環境で採点および動作確認を行うことができる。
+[PARC 2026](https://github.com/matsuolab/PARC2026_pre) 予選 Track 1 に個人で取り組んだリポジトリです。
+Track 1 は、背景テクスチャや照明に摂動を加えた LIBERO-plus のシミュレーション環境で、
+ロボットアームに pick-and-place タスクを実行させる課題です。
 
-本環境で実施できる作業は次のとおりである。
-- 自身のポリシーを HTTP サーバーとして起動し、Track 1 の example タスクで評価する
-- 提出物（zip）を、本番と同一の手順でエンドツーエンドに検証する
-- 提出物の妥当性および動作を、提出前に自動チェックする
-  （必須ファイルの有無、サーバーが起動して所定の応答を返すこと、
-  各リクエストが制限時間内に完了することを確認する）
+Physical Intelligence が公開している **pi0.5-LIBERO** を LoRA で追加学習し、
+複数のチェックポイントを重み付き平均した **weighted model soup** を、全タスク共通の単一方策として提出しました。
 
-最初に参照すべきファイルは次のとおりである。
-- 提出物の作成方法・動作する最小実装: [submission_template/](submission_template/)
-  （`policy_server.py` の `MyPolicy` は編集前でもそのまま動作する）
-- 提出前チェック: [validate_submission.py](validate_submission.py)
-- 学習の参考例: [examples/](examples/)（提出には必須ではない）
+評価ハーネスは運営の配布物をそのまま使い、データ変換、学習、推論サーバー、
+実験・分析用のスクリプトを自分で実装しています。
 
-評価パイプラインおよび提出物チェックスクリプトは、本番採点のTrack 1と同じ評価処理・制約を
-再現する。ただし、本番評価とは以下の点で異なる。
+## 結果
 
-- 同梱されているのは公開されている example タスクのみである。本番の採点は、
-  **公開されていないタスクを含む別のタスクセット**で実施される
-- 出力されるのは成功率および軌道メトリクスの生値である。リーダーボードの順位を決定する
-  スコア算出設定は含まれない
-- 推論タイムアウト（[下記](#タイムアウト仕様)）および成功判定（[下記](#成功判定)）は
-  本番と同一である
+公開されている Track 1 の 4 タスクで、各 16 エピソード（最大 600 ステップ）をローカル評価した結果です。
 
-## 1. セットアップ
+| タスク | 摂動 | 成功率 |
+|---|---|---:|
+| 棚の上段にある黒いボウルを皿に置く | 背景 | 93.8% |
+| トマトソースをバスケットに入れる | 背景（最も強い） | 56.3% |
+| 牛乳をバスケットに入れる | 照明 | 100% |
+| ボウルをコンロに置く | 照明 | 93.8% |
+| **全体** | | **85.9%** |
 
-Python 3.10、git、unzip が必要である。[setup.sh](setup.sh) は本番の採点環境と同一の構築
-（venv、ピン止めした依存、LIBERO-plus の取得とパッチ、アセットのダウンロードと配線）を
-一括して実行する。setup.sh が取得・インストールする第三者製ソフトウェアとその
-ライセンスは [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) を参照すること。
+衝突率（操作対象以外の物体を動かした割合）は 3.1%、平均 jerk は 4.59 でした。
+衝突したエピソードは失敗扱いになり、軌道の滑らかさもスコアに影響します。
 
-```bash
-bash setup.sh     # 初回のみ（アセット取得を含めて 10〜20 分）
-source env.sh     # 評価を実行するシェルで毎回実行する
-```
+### モデルの変遷
 
-> setup.sh は `~/.libero/config.yaml` を上書きする（既存の設定は `.bak` に退避される）。
-> 既に LIBERO を使用しており元の設定に戻す場合は、`~/.libero/config.yaml.bak`
-> を書き戻すこと。
+| 構成 | 成功率 |
+|---|---:|
+| SmolVLA（追加学習なし） | 0% |
+| SmolVLA + LoRA に、ルールベースの制御を組み合わせたもの | 50% |
+| pi0.5-LIBERO（追加学習なし） | 81.3% |
+| **pi0.5-LIBERO + LoRA + model soup（提出モデル）** | **85.9%** |
 
-### Docker を使用する場合（既存環境への影響を避ける場合はこちらを推奨する）
+上の 3 行は各 8 エピソード、提出モデルは各 16 エピソードでの評価です。
 
-```bash
-docker build -t parc2026 .
-docker run -it --rm parc2026                     # 対話シェル（以降のコマンドをそのまま実行できる）
-docker run --rm -v $PWD/my_submission.zip:/sub.zip parc2026 \
-    python evaluate.py /sub.zip --n-episodes 2   # 提出 zip の一括評価
-```
+## アプローチ
 
-本番の採点コンテナと同一のベース（ubuntu 22.04 + osmesa レンダリング）を使用し、環境構築は
-ローカルと同一の [setup.sh](setup.sh) がビルド時に実行される。
+1. **モデル選定**
+   SmolVLA、TurboVLA、VLANeXt、GR00T などを比較しました。公開チェックポイントが 1 つで全タスクを扱えること、
+   多様なデータで学習されていて汎化が期待できることから、pi0.5-LIBERO を選びました。
+   PyTorch 版と JAX 版では JAX 版の成功率が高かったため、JAX 版（openpi）を使っています。
+   詳細は [docs/model_selection.md](docs/model_selection.md) にあります。
+2. **データ変換**
+   Hugging Face 上の `lerobot/libero_plus` は openpi の学習コードでそのまま読めない形式のため、
+   2 段階の変換パイプラインを実装しました。その過程で、chunk 境界でのインデックスのずれや、
+   Parquet のメタデータが欠落する不具合も修正しています。
+3. **LoRA 学習**
+   ベースモデルの重みは固定し、LoRA の行列（全体の約 1.5%、約 5,000 万パラメータ）だけを学習しました。
+   成功率が最も低かったトマトソースのタスクはデータを増やし、350 エピソードにしています（他のタスクは各 60、計 530）。
+4. **Model soup**
+   同じ設定で学習し直しても成功率が最大 11 ポイントほどぶれたため、step 700・750・775 の
+   チェックポイントを 2:1:1 で平均し、1 つのチェックポイントの当たり外れに左右されにくくしました。
+5. **推論**
+   1 回の推論で 10 ステップ分の行動を生成し、先頭の 5 ステップを実行してから次の推論を行います。
+   JIT コンパイルはサーバー起動時に済ませておき、1 リクエスト 10 秒の制限に収めています。
 
-## 2. 評価を回す
+### 効果がなかった工夫
 
-```bash
-# 1) 自身のポリシーサーバーを起動する（別ターミナル。テンプレートは編集前でも
-#    ランダム action を返すので、まずそのまま起動して疎通確認できる）
-python submission_template/policy_server.py --port 8000
+- **データ拡張**：評価環境の暗い背景を模した色調変換を加えましたが、トマトソースのタスクの成功率は
+  43.8% から 6.2〜31.2% に下がりました。
+- **学習タスクを 40 に増やす**：LIBERO-plus 全体での成功率は上がったものの、公開 4 タスクへの学習が薄まり、
+  運営による評価スコアは 0.391 から 0.260〜0.313 に下がりました。データ拡張を強めるほど jerk も増えました。
+- **jerk を抑える補助損失**：成功率も衝突率も改善しませんでした。
+- **複数の推論結果を時間方向に平均する**：jerk は 4.59 から 3.47 に下がりましたが、
+  成功率は 85.9% から 81.2% に下がり、衝突率は 3.1% から 14.1% に増えました。
 
-# 2) 評価を実行する
-python -m pipeline --server-url http://localhost:8000 --track track1 --n-episodes 2 --max-steps 600
+## リポジトリ構成
 
-# タスクを指定して評価する（example タスク名を指定する。存在しない名前は候補一覧つきでエラーとなる）
-python -m pipeline --server-url http://localhost:8000 --track track1 --tasks <task_id>
+自分で実装したもの：
 
-# 提出 zip をエンドツーエンドで検証する（zip 展開 → 依存インストール → 評価まで自動実行）
-python evaluate.py my_submission.zip --n-episodes 2
-```
-
-結果は `results/<submission_id>.json` に出力される。成功率、ステップ数、軌道メトリクス
-（経路長、jerk、SPARC 等）の詳細が含まれる。
-
-## 3. 提出前のチェック
-
-提出物の妥当性（必須ファイル、zip 構造、エンドポイント）と、実際に起動して
-動作すること（/health→/reset→/act が正常に応答し、応答が制限時間内であること）を検査する。
-
-```bash
-python validate_submission.py my_submission.zip            # 静的検査 + 起動スモークテスト
-python validate_submission.py my_submission.zip --static   # 静的検査のみ（起動しない）
-```
-
----
-
-## 提出フォーマット
-
-提出物は **HTTP ポリシーサーバー一式の zip** である。サーバーは次の 3 エンドポイントを
-実装する（[テンプレート](submission_template/)を編集することで自動的に満たされる）。
-
-| エンドポイント | 役割 |
+| パス | 内容 |
 |---|---|
-| `GET /health` | 起動確認（200 を返すまで評価側がポーリングする） |
-| `POST /reset` | エピソード開始（`instruction`, `seed` を JSON で受け取る） |
-| `POST /act` | 観測（msgpack）→ action を返す。**float32 shape (7,)** `[dx, dy, dz, droll, dpitch, dyaw, gripper]` |
+| [pi05_lora/](pi05_lora/) | データ変換、LoRA 学習、model soup、各種実験と分析のスクリプト |
+| [submission_template/](submission_template/) | 提出用のポリシーサーバーと pi0.5 推論アダプタ |
+| [smolvla_baseline/](smolvla_baseline/) | 最初に試した SmolVLA の学習スクリプト |
+| [tests/](tests/) | 推論アダプタと学習設定のテスト |
+| [docs/](docs/) | モデル選定の調査メモ、SmolVLA ベースラインの記録 |
 
-## 成功判定
+運営の配布物（ほぼ変更なし）：
 
-本番の採点と同一の基準である。エピソードが成功と扱われるのは、**タスクのゴール条件を
-満たし、かつ衝突が発生していない**場合のみである。
-
-衝突は「操作対象以外の物体を動かしたか」で判定する。タスクが操作対象とする物体
-（BDDL の `:obj_of_interest`）を除く全物体について、初期位置からの変位（xyz 各軸の
-絶対値の和）を各ステップで監視し、その最大値が **1 mm** を超えた物体が 1 つでもあれば、
-そのエピソードは失敗となる。
-
-- 対象物体を掴んで動かすことは当然に許容される。判定対象は「それ以外の物体」である
-- 変位は環境が落ち着いた時点（エピソード開始直前）の位置を基準とする
-- 動かしてしまった物体を元の位置へ戻しても、変位の最大値で判定するため失敗のままである
-
-## タイムアウト仕様
-
-本番のTrack 1採点と同一の制約である。
-
-**`/act`・`/reset` の 1 リクエストが 10 秒を超えた場合、そのトラックは失敗（error 扱い）
-となり 0 点となる。** これは平均でも累積でもなく、1 回でも超過するとそのトラック全体が
-失敗となる制約である。モデルの推論が 10 秒以内に収まることを必ず確認すること。
-
-| 対象 | 上限 | 超えると |
-|---|---|---|
-| 推論: `/act`（および `/reset`）1 リクエスト | **10 秒** | そのトラックは error 扱いの 0 点 |
-| サーバー起動（モデルロードを含む） | 既定 **120 秒**（`SERVER_TIMEOUT` で変更可） | 評価不能として終了 |
-
-- タイムアウトは **HTTP リクエスト単位**である。平均・累積・エピソード単位の制限はない。
-- アクションチャンクをサーバー内にキャッシュするモデルの場合、推論が実行される「重い」
-  リクエストのみが上限の対象となる（実質的な制約は「チャンク 1 回分の推論 ≤ 10 秒」である）。
-- [validate_submission.py](validate_submission.py) のスモークテストは、同一の 10 秒基準で
-  レイテンシを警告する。提出前に必ず一度実行することを推奨する。
-
-## ディレクトリ構成
-
-| パス | 役割 |
+| パス | 内容 |
 |---|---|
-| [pipeline/](pipeline/) | Track 1 評価パイプライン |
-| [compe/t1/](compe/t1/) | Track 1 の example タスク定義 |
-| [submission_template/](submission_template/) | 提出テンプレート（`policy_server.py` の `MyPolicy` のみ編集。編集前でも動作する） |
-| [evaluate.py](evaluate.py) | Track 1 の zip 一括評価 |
-| [validate_submission.py](validate_submission.py) | 提出物チェックスクリプト |
-| [examples/](examples/) | 学習の参考例（SmolVLA の LoRA 追加学習ノートブック）。提出には必須ではない |
-| [tests/](tests/) | ハーネスの単体テスト |
-| [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) | setup.sh が取得する第三者製ソフトのライセンス表記 |
+| [pipeline/](pipeline/)、[compe/t1/](compe/t1/) | Track 1 の評価パイプラインとタスク定義 |
+| [evaluate.py](evaluate.py)、[validate_submission.py](validate_submission.py) | 提出 zip の評価と事前チェック |
+| [setup.sh](setup.sh)、[Dockerfile](Dockerfile) | 採点環境と同じ環境の構築 |
+
+評価ハーネスの仕様（提出形式、成功判定、タイムアウト）は
+[docs/competition_harness.md](docs/competition_harness.md) にまとめています。
+
+## 使い方
+
+```bash
+# 環境構築（採点環境と同じ構成）
+bash setup.sh
+source env.sh
+
+# ポリシーサーバーを起動（既定は pi0.5 / JAX）
+PI05_CHECKPOINT=/path/to/soup_checkpoint \
+  python submission_template/policy_server.py --port 8000
+
+# 別のターミナルで Track 1 を評価
+python -m pipeline --server-url http://localhost:8000 --track track1 \
+  --n-episodes 16 --max-steps 600
+```
+
+学習、データ変換、model soup の手順は [pi05_lora/README.md](pi05_lora/README.md) を参照してください。
+学習データとモデルの重みはサイズが大きいため、このリポジトリには含めていません。
+
+## 謝辞・ライセンス
+
+- 評価ハーネスは、松尾研究室が配布した [PARC2026_pre](https://github.com/matsuolab/PARC2026_pre) に基づいています。
+- ベースモデルは [openpi](https://github.com/Physical-Intelligence/openpi)（Apache-2.0）の pi0.5-LIBERO です。
+  PaliGemma／Gemma 由来の重みには Gemma Terms of Use も適用されます。
+- 学習データには [lerobot/libero_plus](https://huggingface.co/datasets/lerobot/libero_plus) を使用しました。
+- 第三者ソフトウェアのライセンスは [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) を参照してください。

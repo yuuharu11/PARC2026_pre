@@ -8,15 +8,16 @@ from pathlib import Path
 import sys
 
 import numpy as np
+from paths import CHECKPOINT_ROOT, OPENPI_ROOT
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--openpi-root", type=Path, default=Path("/tmp/openpi"))
+    parser.add_argument("--openpi-root", type=Path, default=OPENPI_ROOT)
     parser.add_argument(
         "--checkpoint",
         type=Path,
-        default=Path("/work/PARC2026_training/checkpoints/pi05_libero_lora/smoke_20step/19"),
+        default=CHECKPOINT_ROOT / "pi05_libero_lora" / "smoke_20step" / "19",
     )
     return parser.parse_args()
 

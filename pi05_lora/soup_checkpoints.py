@@ -33,6 +33,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from paths import OPENPI_ROOT
 
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
@@ -60,7 +61,7 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="index (0-based, in --checkpoint order) of which candidate's assets/ to copy",
     )
-    parser.add_argument("--openpi-root", type=Path, default=Path("/tmp/openpi"))
+    parser.add_argument("--openpi-root", type=Path, default=OPENPI_ROOT)
     return parser.parse_args()
 
 
