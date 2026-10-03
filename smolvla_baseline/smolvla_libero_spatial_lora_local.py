@@ -1,5 +1,5 @@
 """
-Local (non-Colab) reproduction of examples/smolvla_libero_spatial_lora.ipynb.
+Local (non-Colab) reproduction of smolvla_baseline/smolvla_libero_spatial_lora.ipynb.
 
 This is a faithful port of the notebook's code cells to a single script, so
 it can run on a local GPU box instead of Google Colab. Every path, config
@@ -9,11 +9,11 @@ notebook. The only behavioral changes are the Colab-only bits (in-cell
 `!pip`/`!apt-get`, the final `google.colab.files.download` cell) and a few
 version pins that Colab's preinstalled environment makes unnecessary there
 but a bare venv needs here (torch/torchvision/torchcodec, `future`,
-`IPython`) -- see examples/README.md for why each one is needed.
+`IPython`) -- see smolvla_baseline/README.md for why each one is needed.
 
 Requires: a Python 3.12 venv with torch==2.9.1+cu126,
 torchvision==0.24.1+cu126, torchcodec==0.9.1, and mujoco==3.7.0
-preinstalled (see examples/README.md), run as root with network access
+preinstalled (see smolvla_baseline/README.md), run as root with network access
 (apt-get, git clone, HF downloads) and ~20GB free disk under /content.
 """
 

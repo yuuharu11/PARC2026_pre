@@ -14,9 +14,3 @@ wandb/
 /submission_template/lerobot/
 /submission_zip/
 
-# LaTeX build byproducts
-*.aux
-*.log
-*.out
-*.toc
-/report/PARC2026_track1_report.pdf

@@ -1,5 +1,18 @@
 # pi0.5 LIBERO LoRA
 
+## Files
+
+| Role | Files |
+|---|---|
+| Data pipeline | `stage1_decode_libero_plus.py`, `stage2_build_openpi_dataset.py`, `merge_shard_datasets.py`, `extract_task_dataset.py`, `oversample_task.py`, `build_uniform_task_dataset.py`, `prepare_smoke_dataset.py` |
+| Training | `train_pi05_lora.py`, `verify_checkpoint.py`, `paths.py` |
+| Model soup (final submission) | `soup_checkpoints.py` |
+| Experiments (not used in the final model) | `texture_perturbation.py` + `augmented_data_config.py` (`--augment`), `standard_augmentation.py` + `standard_augmented_data_config.py` (`--standard-augment`), `jerk_loss.py` (`--jerk-loss-weight`) |
+| Diagnostics | `diagnose_tomato_failure.py`, `scan_tomato_brightness.py` |
+
+The scripts import each other as siblings, so keep them in this directory and
+run them by path (e.g. `python pi05_lora/train_pi05_lora.py`).
+
 Training data and checkpoints are kept outside the repository. Their locations
 are defined in [`paths.py`](paths.py) and can be overridden with environment
 variables:

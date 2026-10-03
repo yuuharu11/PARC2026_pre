@@ -31,7 +31,6 @@ Physical Intelligence の **pi0.5-LIBERO** を LoRA で追加学習し、複数�
 | pi0.5-LIBERO（公式チェックポイント、追加学習なし） | 26/32（81.3%） |
 | **pi0.5-LIBERO LoRA weighted soup（提出モデル）** | **85.9%**（16 ep/task） |
 
-詳細は技術レポート [report/PARC2026_track1_report.tex](report/PARC2026_track1_report.tex) を参照してください。
 
 ## アプローチ
 
@@ -67,9 +66,8 @@ Physical Intelligence の **pi0.5-LIBERO** を LoRA で追加学習し、複数�
 | [submission_template/pi05_policy.py](submission_template/pi05_policy.py) | openpi/JAX の pi0.5 推論アダプタ（提出モデル） |
 | [submission_template/pi05_lerobot_policy.py](submission_template/pi05_lerobot_policy.py) | 比較用の LeRobot PyTorch 版 pi0.5 アダプタ |
 | [submission_template/policy_server.py](submission_template/policy_server.py) | バックエンド切替（`POLICY_BACKEND`）付きのポリシーサーバー |
-| [examples/](examples/) | SmolVLA LoRA 学習のローカル実行版（初期ベースライン） |
+| [smolvla_baseline/](smolvla_baseline/) | 初期ベースライン（SmolVLA の LoRA 学習。配布ノートブックとそのローカル実行版） |
 | [tests/](tests/) | アダプタ・学習設定の単体テスト |
-| [report/](report/) | 技術レポート（LaTeX） |
 | [docs/](docs/) | モデル選定調査、SmolVLA ベースラインの記録 |
 
 運営配布の評価ハーネス（ほぼそのまま使用）:
