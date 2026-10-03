@@ -1,8 +1,8 @@
 # ポリシーサーバー
 
-提出物として採点環境で起動する HTTP サーバーです。`/health`、`/reset`、`/act` の 3 つのエンドポイントを持ち、
-観測を受け取って 7 次元の行動を返します。サーバー部分は運営のテンプレートのままで、
-`MyPolicy` クラスの中身だけを実装しています。
+採点環境で起動する提出用の HTTP サーバーです。`/health`、`/reset`、`/act` の 3 つのエンドポイントを備え、
+観測を受け取って 7 次元の行動を返します。運営のサーバーテンプレートをベースに、
+`MyPolicy` クラスと各モデルの推論アダプタを実装しています。
 
 ## バックエンド
 
@@ -16,21 +16,25 @@
 
 ### pi0.5（JAX 版、提出モデル）
 
+`setup.sh` が作成する評価環境とは別に、openpi の推論環境が必要です。
+初回は[ルート README の環境構築手順](../README.md#使い方)を実行してください。
+以下はリポジトリ直下で実行し、openpi の仮想環境からサーバーを起動します。
+
 ```bash
 PI05_CHECKPOINT=/path/to/soup_checkpoint \
-  python submission_template/policy_server.py --port 8000
+  "${OPENPI_ROOT:-/tmp/openpi}/.venv/bin/python" submission_template/policy_server.py --port 8000
 ```
 
 | 環境変数 | 既定値 | 内容 |
 |---|---|---|
 | `PI05_CHECKPOINT` | `submission_template/pi05_weights` | チェックポイントのディレクトリ |
-| `PI05_VARIANT` | 自動判定 | `base` または `lora`。`training_manifest.json` があれば LoRA と判定する |
+| `PI05_VARIANT` | 自動判定 | `base` または `lora`。チェックポイントのディレクトリか、その親ディレクトリに `training_manifest.json` があれば LoRA と判定する |
 | `PI05_ACTION_CHUNK` | `5` | 生成した 10 ステップのうち、再推論までに実行するステップ数 |
 | `PI05_TEMPORAL_ENSEMBLE` | `0` | 時間方向のアンサンブル（実験用。提出モデルでは無効） |
-| `PI05_WARMUP` | `1` | 起動時に JIT コンパイルを済ませる |
+| `PI05_WARMUP` | `1` | 起動時に JIT コンパイルを行う |
 
-学習時と同じ前処理（画像の 180 度回転と padding 付きリサイズ、手先姿勢の axis-angle 変換）を推論時にも適用し、
-出力した行動は [-1, 1] にクリップします。
+推論時にも学習時と同じ前処理（画像の 180 度回転、余白を加えたリサイズ、手先姿勢の軸角表現への変換）を適用します。
+出力する行動の各成分は [-1, 1] の範囲に制限します。
 
 ### pi0.5（LeRobot / PyTorch 版、比較用）
 
@@ -41,8 +45,8 @@ LEROBOT_PI05_DEVICE=cuda \
   python submission_template/policy_server.py --port 8000
 ```
 
-- 画像の 180 度回転を標準で行います。回転しない場合、評価で 0/8 だったためです。比較するときは `LEROBOT_PI05_FLIP_IMAGES=0` を指定します。
-- 1 回に実行するステップ数は `LEROBOT_PI05_ACTION_CHUNK` で変えられます（既定 5）。
+- 画像は既定で 180 度回転させます。回転を適用しなかった評価では、8 エピソードすべてで失敗しました。回転の有無を比較する場合は、`LEROBOT_PI05_FLIP_IMAGES=0` で無効にできます。
+- 次の推論までに実行するステップ数は `LEROBOT_PI05_ACTION_CHUNK` で変更できます（既定値は 5）。
 - PyTorch 版に必要な Transformers の差分は [transformers_replace/](transformers_replace/) に同梱しており、
   初期化時に `transformers==4.53.2` に適用します。
 
@@ -54,8 +58,9 @@ SMOLVLA_CHECKPOINT=/path/to/smolvla_merged_model \
   python submission_template/policy_server.py --port 8000
 ```
 
-採点環境（Python 3.10）で `lerobot[smolvla]==0.4.4` を pip で入れると、不要な `evdev` のビルドに失敗します。
-そのため、LeRobot 0.4.4 のソースを `lerobot/` として提出物に同梱していました。
+採点環境（Python 3.10）では、`lerobot[smolvla]==0.4.4` を pip でインストールすると、
+この推論には不要な依存パッケージ `evdev` のビルドで失敗します。
+SmolVLA の提出物では、これを避けるために LeRobot 0.4.4 のソースを `lerobot/` ディレクトリに同梱していました。
 
 ```bash
 cp -a "$(python -c 'import pathlib, lerobot; print(pathlib.Path(lerobot.__file__).parent)')" \
@@ -64,10 +69,10 @@ find submission_template/lerobot -type d -name __pycache__ -prune -exec rm -rf {
 ```
 
 > **状態ベクトルの回転表現について**
-> SmolVLA のチェックポイントは、手先の回転を Euler 角ではなく axis-angle で学習しています。
-> 当初 Euler 角で実装していたため、追加学習なしでも衝突率が約 80% と異常に高くなっていました。
-> 両者は次元も値の範囲も近く、正規化統計量を見ただけでは区別できません。
-> LeRobot の `LiberoProcessorStep` の実装を確認して判明しました。
+> SmolVLA のチェックポイントでは、手先の回転にオイラー角ではなく軸角表現（axis-angle）を用いています。
+> 当初はオイラー角を入力していたため、追加学習なしの評価で衝突率が約 80% に達しました。
+> どちらも 3 次元で値の範囲も近いため、正規化統計量だけでは見分けられず、
+> LeRobot の `LiberoProcessorStep` の実装を確認して、必要な回転表現を特定しました。
 
 ## 評価と提出前チェック
 
