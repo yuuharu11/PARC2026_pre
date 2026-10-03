@@ -52,7 +52,7 @@ verified. A paper number alone is not treated as a test result.
   6.31 GiB. These pass the latency constraints on that GPU.
 - No rollout score has yet been produced, and the tested checkpoint remains
   Object-suite-specific rather than a general mixed policy.
-- See `VLANEXT_EXPERIMENT.md` for exact integration details.
+- See the VLANeXt integration notes (not included in this repository).
 
 ### pi0.5-LIBERO
 
