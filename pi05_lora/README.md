@@ -1,118 +1,122 @@
-# pi0.5 LIBERO LoRA
+# pi0.5-LIBERO の LoRA 学習
 
-## Files
+pi0.5-LIBERO の追加学習に使用したデータ変換、学習、model soup、実験・分析用のスクリプトをまとめています。
 
-| Role | Files |
+## ファイル構成
+
+| 用途 | ファイル |
 |---|---|
-| Data pipeline | `stage1_decode_libero_plus.py`, `stage2_build_openpi_dataset.py`, `merge_shard_datasets.py`, `extract_task_dataset.py`, `oversample_task.py`, `build_uniform_task_dataset.py`, `prepare_smoke_dataset.py` |
-| Training | `train_pi05_lora.py`, `verify_checkpoint.py`, `paths.py` |
-| Model soup (final submission) | `soup_checkpoints.py` |
-| Experiments (not used in the final model) | `texture_perturbation.py` + `augmented_data_config.py` (`--augment`), `standard_augmentation.py` + `standard_augmented_data_config.py` (`--standard-augment`), `jerk_loss.py` (`--jerk-loss-weight`) |
-| Diagnostics | `diagnose_tomato_failure.py`, `scan_tomato_brightness.py` |
+| データ変換 | `stage1_decode_libero_plus.py`, `stage2_build_openpi_dataset.py`, `merge_shard_datasets.py`, `extract_task_dataset.py`, `oversample_task.py`, `build_uniform_task_dataset.py`, `prepare_smoke_dataset.py` |
+| 学習・チェックポイントの検証 | `train_pi05_lora.py`, `verify_checkpoint.py`, `paths.py` |
+| Model soup（提出モデル） | `soup_checkpoints.py` |
+| 実験（提出モデルでは不使用） | `texture_perturbation.py` + `augmented_data_config.py` (`--augment`), `standard_augmentation.py` + `standard_augmented_data_config.py` (`--standard-augment`), `jerk_loss.py` (`--jerk-loss-weight`) |
+| 分析 | `diagnose_tomato_failure.py`, `scan_tomato_brightness.py` |
 
-The scripts import each other as siblings, so keep them in this directory and
-run them by path (e.g. `python pi05_lora/train_pi05_lora.py`).
+各スクリプトは同じディレクトリ内のモジュールを読み込むため、この配置を維持してください。
+実行時は、`python pi05_lora/train_pi05_lora.py` のようにファイルのパスを指定します。
 
-Training data and checkpoints are kept outside the repository. Their locations
-are defined in [`paths.py`](paths.py) and can be overridden with environment
-variables:
+## データとチェックポイントの保存先
 
-| Variable | Default | Contents |
+学習データとチェックポイントはリポジトリの外に保存します。
+保存先は [`paths.py`](paths.py) で定義しており、環境変数で変更できます。
+
+| 環境変数 | 既定値 | 内容 |
 |---|---|---|
-| `PARC_DATA_ROOT` | `/work/PARC2026_data` | LIBERO-plus source and openpi-format datasets (`lerobot/` below it) |
-| `PARC_TRAINING_ROOT` | `/work/PARC2026_training` | training checkpoints (`checkpoints/` below it) |
-| `OPENPI_ROOT` | `/tmp/openpi` | openpi checkout with its own `.venv` |
-| `OPENPI_DATA_HOME` | `/tmp/openpi-data` | openpi asset cache holding the base pi0.5-LIBERO checkpoint |
+| `PARC_DATA_ROOT` | `/work/PARC2026_data` | LIBERO-plus の元データと openpi 形式のデータセット（配下の `lerobot/` に保存） |
+| `PARC_TRAINING_ROOT` | `/work/PARC2026_training` | 学習チェックポイント（配下の `checkpoints/` に保存） |
+| `OPENPI_ROOT` | `/tmp/openpi` | openpi のソースと専用の仮想環境 `.venv` |
+| `OPENPI_DATA_HOME` | `/tmp/openpi-data` | ベースモデルの pi0.5-LIBERO チェックポイントを含む openpi のアセットキャッシュ |
 
-Every script also accepts explicit `--...` path arguments.
+各スクリプトのパス指定用引数（`--...`）でも、使用するファイルやディレクトリを指定できます。
 
-Run the 20-step smoke test with the openpi environment and an A100:
+## 学習と推論の動作確認
+
+[ルート README](../README.md#使い方)に従って、openpi の環境を構築してください。
+以下のコマンドはリポジトリ直下で実行します。`OPENPI_ROOT` が未設定または空の場合は、`/tmp/openpi` を使用します。
+別の場所にある openpi を使う場合は、その絶対パスを `OPENPI_ROOT` に設定してください。
+
+openpi の仮想環境と A100 を使用して、20 ステップの学習で動作を確認します。
 
 ```bash
 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
-$OPENPI_ROOT/.venv/bin/python pi05_lora/train_pi05_lora.py \
+"${OPENPI_ROOT:-/tmp/openpi}/.venv/bin/python" pi05_lora/train_pi05_lora.py \
   --steps 20 --batch-size 8 --save-interval 10 --overwrite
 ```
 
-If the full 40-task download is still in progress, make a no-copy subset from
-the available contiguous prefix and use it only for a training smoke test:
+40 タスク全体のダウンロードが完了していない場合は、先頭から連続して取得できているデータから、
+ファイルのコピーを伴わない小規模なデータセットを作成できます。このデータセットは学習の動作確認にのみ使用してください。
 
 ```bash
-$OPENPI_ROOT/.venv/bin/python pi05_lora/prepare_smoke_dataset.py
-$OPENPI_ROOT/.venv/bin/python pi05_lora/train_pi05_lora.py \
+"${OPENPI_ROOT:-/tmp/openpi}/.venv/bin/python" pi05_lora/prepare_smoke_dataset.py
+"${OPENPI_ROOT:-/tmp/openpi}/.venv/bin/python" pi05_lora/train_pi05_lora.py \
   --dataset-repo-id physical-intelligence/libero-smoke \
   --steps 20 --batch-size 8 --save-interval 10 --overwrite
 ```
 
-Restore the resulting LoRA-shaped checkpoint and compile one inference:
+作成された LoRA チェックポイントを読み込み、推論のコンパイルまで確認します。
 
 ```bash
-$OPENPI_ROOT/.venv/bin/python pi05_lora/verify_checkpoint.py
+"${OPENPI_ROOT:-/tmp/openpi}/.venv/bin/python" pi05_lora/verify_checkpoint.py
 ```
 
-The submission adapter auto-detects a LoRA checkpoint when
-`training_manifest.json` is beside the numbered checkpoint (or copied into its
-root). It can also be selected explicitly with `PI05_VARIANT=lora`.
+提出用の推論アダプタは、チェックポイントのディレクトリか、その親ディレクトリに
+`training_manifest.json` がある場合、LoRA チェックポイントとして自動判定します。
+`PI05_VARIANT=lora` を指定して明示的に選択することもできます。
 
-The model uses the official pi0.5-LIBERO checkpoint as its initial state,
-Gemma 2B LoRA rank 16, and action-expert LoRA rank 32.  Every non-LoRA
-parameter is frozen: about 50.0M of 3.40B parameters (1.47%) are trainable.
-EMA is disabled.
+### 学習設定
 
-## LIBERO-Plus dataset pipeline
+公式の pi0.5-LIBERO チェックポイントを初期値として、Gemma 2B の LoRA ランクを 16、
+action expert の LoRA ランクを 32 に設定しています。
+LoRA 以外のパラメータはすべて固定し、全約 34 億パラメータのうち、約 5,000 万（1.47%）を学習します。
+EMA（重みの指数移動平均）は無効にしています。
 
-`lerobot/libero_plus` (HF Hub, v3.0 schema, fps=20) is not directly readable
-by openpi's pinned old-lerobot. Two stages convert it into an openpi-compatible
-flat-key dataset:
+## LIBERO-plus のデータ変換
 
-- `stage1_decode_libero_plus.py` (main venv): decode selected episodes into
-  per-episode `.npz` files.
-- `stage2_build_openpi_dataset.py` (openpi venv): rebuild those npz files into
-  an openpi-format LeRobotDataset (fps=20, flat `image`/`wrist_image` keys).
-  Supports `--append` to extend an existing dataset.
-- `merge_shard_datasets.py`: filesystem-level merge of independently-built
-  shard datasets into a master, without going through LeRobotDataset's slow
-  per-frame API.
-- `extract_task_dataset.py`: pull all episodes of one task out into a
-  standalone single-task dataset (used to isolate a task from multi-task LoRA
-  interference for diagnostics).
-- `oversample_task.py`: duplicate one task's episodes N-1 extra times in
-  place, to bias a multi-task LoRA's training-batch composition toward that
-  task using only real data (no synthetic augmentation).
+`lerobot/libero_plus`（Hugging Face Hub、v3.0 スキーマ、20 fps）は、
+openpi が使用する旧バージョンの LeRobot では直接読み込めません。
+以下の 2 段階で、`image` と `wrist_image` をトップレベルのキーに持つ openpi 対応のデータセットに変換します。
 
-All three of the above that copy parquet data (`merge_shard_datasets.py`,
-`extract_task_dataset.py`, `oversample_task.py`) use `pyarrow` directly rather
-than pandas' `read_parquet`/`to_parquet` convenience methods, which silently
-drop the parquet schema's `huggingface` metadata key that tells HF `datasets`
-to auto-decode image columns. Losing it makes every image column load as a
-raw `{"bytes", "path"}` dict instead of a tensor, and training crashes deep in
-`hf_transform_to_torch` with "Could not infer dtype of dict".
+1. `stage1_decode_libero_plus.py`（評価環境の仮想環境で実行）：対象エピソードをデコードし、エピソードごとの `.npz` ファイルに保存します。
+2. `stage2_build_openpi_dataset.py`（openpi の仮想環境で実行）：`.npz` ファイルから、openpi 形式の LeRobotDataset（20 fps）を構築します。`--append` を指定すると、既存のデータセットに追加できます。
 
-## Tomato-sauce augmentation and diagnostics
+変換後のデータセットを加工するスクリプトも用意しています。
 
-The tomato-sauce Track1 task persistently underperformed the other three
-graded tasks across every tested configuration. `diagnose_tomato_failure.py`
-and `scan_tomato_brightness.py` were used to root-cause it: the eval scene's
-texture perturbation reuses a PBR GLOSS channel as the table's color texture,
-producing a near-black scene (~30/255 mean brightness) with no matching or
-even closely-matching example in the available training demonstrations
-(darkest real episode found was ~45/255).
+- `merge_shard_datasets.py`：個別に構築した分割データセットを、ファイル単位で 1 つに統合します。処理に時間がかかる LeRobotDataset のフレーム単位の API を介さずに統合できます。
+- `extract_task_dataset.py`：指定したタスクの全エピソードを抽出し、単一タスクのデータセットを作成します。複数タスクの LoRA 学習による干渉を切り分けるために使用しました。
+- `oversample_task.py`：指定したタスクのエピソードを、同じデータセット内でさらに N−1 回複製します。合成データを使わず、実データだけで学習バッチ内の対象タスクの比率を高めます。
 
-`texture_perturbation.py` (a `TexturePerturbation` dataclass) mimics this and
-two other perturbation modes found by inspecting LIBERO-Plus's actual texture
-assets (NRM channel -> blue/purple tint, REFL/AO/DISP -> desaturation) as a
-training-time-only augmentation via `repack_transforms` (never applied at
-inference). `augmented_data_config.py` wires it into training via `--augment`
-on `train_pi05_lora.py`, with optional task-conditional boosting
-(`--boosted-prob`, `--boosted-dark-weight`) for the tomato-sauce task
-specifically.
+Parquet データをコピーする上記 3 つのスクリプトでは、pandas の `read_parquet` / `to_parquet` ではなく、
+`pyarrow` を直接使用しています。pandas 経由では、画像列の自動デコードに必要な
+Parquet スキーマの `huggingface` メタデータが失われるためです。
+このメタデータがないと、Hugging Face の `datasets` は画像をテンソルではなく `bytes` と `path` を持つ辞書として読み込み、
+学習時に `hf_transform_to_torch` 内で `Could not infer dtype of dict` エラーが発生します。
 
-**Result:** synthetic augmentation, at every tested strength, underperformed
-training on real data alone -- confirmed both in the full 4-task mix and in
-an isolated tomato-only ablation (43.8% with no augmentation vs. 31.2% at
-moderate augmentation and 6.2% at strong augmentation, all n=32). The
-multi-task LoRA's shared capacity across four tasks was the larger factor:
-oversampling tomato-sauce's real episodes 3x via `oversample_task.py` (no
-synthetic augmentation) raised Track1 overall from 75.0% to 76.6% and
-tomato-sauce specifically from 25.0% to 31.2% (n=16/task), and is the
-configuration used for the `pi05_submission_0811.zip` candidate.
+## トマトソースのタスクに対するデータ拡張と分析
+
+Track 1 のトマトソースのタスクは、試したすべての設定で、他の 3 タスクより成功率が低い状態でした。
+`diagnose_tomato_failure.py` と `scan_tomato_brightness.py` で調べたところ、
+評価環境の背景摂動では、PBR テクスチャの GLOSS チャネルをテーブルの色として使用しており、
+シーンが極端に暗くなっていました（平均輝度は約 30/255）。
+学習データで最も暗いエピソードでも平均輝度は約 45/255 で、評価環境に近い例は見つかりませんでした。
+
+`texture_perturbation.py` の `TexturePerturbation` データクラスでは、この暗色化に加え、
+LIBERO-plus のテクスチャアセットで確認した 2 種類の変化を模しています。
+NRM チャネルによる青・紫の色調変化と、REFL / AO / DISP チャネルによる彩度低下です。
+これらは `repack_transforms` を通じて学習時にのみ適用し、推論時には適用しません。
+
+`train_pi05_lora.py` に `--augment` を指定すると、`augmented_data_config.py` を通じてこのデータ拡張が有効になります。
+トマトソースのタスクに限って適用確率や暗色化の比率を高めるための引数
+`--boosted-prob` と `--boosted-dark-weight` も用意しています。
+
+### 実験結果
+
+合成データによる拡張は、試したすべての強度で、実データのみの学習より成功率が低くなりました。
+これは 4 タスクをまとめた学習と、トマトソースのみの学習の両方で確認しています。
+トマトソースのみの評価では、データ拡張なしの成功率が 43.8%、中程度の拡張では 31.2%、
+強い拡張では 6.2% でした（いずれも 32 エピソード）。
+
+実験からは、4 タスクで LoRA の表現能力を共有することの影響が、より大きいと考えられました。
+`oversample_task.py` でトマトソースの実エピソード数を 3 倍にすると、
+Track 1 全体の成功率は 75.0% から 76.6%、トマトソースの成功率は 25.0% から 31.2% に改善しました
+（各タスク 16 エピソード、合成データによる拡張なし）。
+この設定は、提出候補 `pi05_submission_0811.zip` に使用しました。
