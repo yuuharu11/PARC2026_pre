@@ -1,16 +1,23 @@
 # pi0.5 LIBERO LoRA
 
-The baseline submission remains untouched.  Training data and checkpoints are
-kept outside the repository:
+Training data and checkpoints are kept outside the repository. Their locations
+are defined in [`paths.py`](paths.py) and can be overridden with environment
+variables:
 
-- dataset: `/work/PARC2026_data/lerobot/physical-intelligence/libero`
-- checkpoints: `/work/PARC2026_training/checkpoints/pi05_libero_lora`
+| Variable | Default | Contents |
+|---|---|---|
+| `PARC_DATA_ROOT` | `/work/PARC2026_data` | LIBERO-plus source and openpi-format datasets (`lerobot/` below it) |
+| `PARC_TRAINING_ROOT` | `/work/PARC2026_training` | training checkpoints (`checkpoints/` below it) |
+| `OPENPI_ROOT` | `/tmp/openpi` | openpi checkout with its own `.venv` |
+| `OPENPI_DATA_HOME` | `/tmp/openpi-data` | openpi asset cache holding the base pi0.5-LIBERO checkpoint |
+
+Every script also accepts explicit `--...` path arguments.
 
 Run the 20-step smoke test with the openpi environment and an A100:
 
 ```bash
 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
-/tmp/openpi/.venv/bin/python pi05_lora/train_pi05_lora.py \
+$OPENPI_ROOT/.venv/bin/python pi05_lora/train_pi05_lora.py \
   --steps 20 --batch-size 8 --save-interval 10 --overwrite
 ```
 
@@ -18,8 +25,8 @@ If the full 40-task download is still in progress, make a no-copy subset from
 the available contiguous prefix and use it only for a training smoke test:
 
 ```bash
-/tmp/openpi/.venv/bin/python pi05_lora/prepare_smoke_dataset.py
-/tmp/openpi/.venv/bin/python pi05_lora/train_pi05_lora.py \
+$OPENPI_ROOT/.venv/bin/python pi05_lora/prepare_smoke_dataset.py
+$OPENPI_ROOT/.venv/bin/python pi05_lora/train_pi05_lora.py \
   --dataset-repo-id physical-intelligence/libero-smoke \
   --steps 20 --batch-size 8 --save-interval 10 --overwrite
 ```
@@ -27,7 +34,7 @@ the available contiguous prefix and use it only for a training smoke test:
 Restore the resulting LoRA-shaped checkpoint and compile one inference:
 
 ```bash
-/tmp/openpi/.venv/bin/python pi05_lora/verify_checkpoint.py
+$OPENPI_ROOT/.venv/bin/python pi05_lora/verify_checkpoint.py
 ```
 
 The submission adapter auto-detects a LoRA checkpoint when

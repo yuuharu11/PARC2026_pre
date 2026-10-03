@@ -19,7 +19,7 @@ LeRobot 0.4.4のPyTorch版pi0.5を比較する場合は、LIBERO学習済みchec
 
 ```bash
 POLICY_BACKEND=pi05_lerobot \
-LEROBOT_PI05_CHECKPOINT=/work/PARC2026_models/pi05_libero_finetuned_v044 \
+LEROBOT_PI05_CHECKPOINT=/path/to/pi05_libero_finetuned_v044 \
 LEROBOT_PI05_DEVICE=cuda \
 python policy_server.py --port 8000
 ```

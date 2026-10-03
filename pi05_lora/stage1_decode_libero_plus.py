@@ -19,8 +19,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from lerobot.datasets import video_utils
+from paths import LIBERO_PLUS_SOURCE
 
-ROOT = Path("/work/PARC2026_data/lerobot/lerobot/libero_plus")
+ROOT = LIBERO_PLUS_SOURCE
 # Bound on how many packed data/*.parquet files (each holding every frame's
 # state/action arrays for up to ~1000 episodes) are kept in memory at once.
 # A full 14,347-episode decode touches every packed file eventually; without

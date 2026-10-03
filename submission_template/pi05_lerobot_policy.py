@@ -88,7 +88,8 @@ class LeRobotPi05Policy:
                 "LEROBOT_PI05_CHECKPOINT",
                 bundled_checkpoint
                 if bundled_checkpoint.is_dir()
-                else "/work/PARC2026_models/pi05_libero_finetuned_v044",
+                else Path(os.environ.get("PARC_MODELS_ROOT", "/work/PARC2026_models"))
+                / "pi05_libero_finetuned_v044",
             )
         ).resolve()
         if not (self.checkpoint / "model.safetensors").is_file():

@@ -16,20 +16,21 @@ import math
 import os
 from pathlib import Path
 import sys
+from paths import BASE_PI05_LIBERO, CHECKPOINT_ROOT, LEROBOT_HOME, OPENPI_ROOT
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--openpi-root", type=Path, default=Path("/tmp/openpi"))
+    parser.add_argument("--openpi-root", type=Path, default=OPENPI_ROOT)
     parser.add_argument(
         "--base-checkpoint",
         type=Path,
-        default=Path("/tmp/openpi-data/openpi-assets/checkpoints/pi05_libero"),
+        default=BASE_PI05_LIBERO,
     )
     parser.add_argument(
         "--dataset-home",
         type=Path,
-        default=Path("/work/PARC2026_data/lerobot"),
+        default=LEROBOT_HOME,
     )
     parser.add_argument(
         "--dataset-repo-id",
@@ -39,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--checkpoint-root",
         type=Path,
-        default=Path("/work/PARC2026_training/checkpoints"),
+        default=CHECKPOINT_ROOT,
     )
     parser.add_argument("--exp-name", default="smoke_20step")
     parser.add_argument("--steps", type=int, default=20)

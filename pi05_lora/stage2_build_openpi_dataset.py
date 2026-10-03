@@ -1,7 +1,7 @@
 """Build an openpi-compatible (old lerobot v2.0 layout, flat keys) LeRobot
 dataset from the .npz episodes produced by stage1_decode_libero_plus.py.
 
-Must run under openpi's own pinned lerobot (/tmp/openpi/.venv/bin/python) --
+Must run under openpi's own pinned lerobot ($OPENPI_ROOT/.venv/bin/python) --
 that old version is what train_pi05_lora.py / pi05_policy.py actually load
 datasets with, and it cannot read lerobot/libero_plus's newer v3.0 layout
 directly (hence the stage1/stage2 split).
@@ -15,13 +15,14 @@ import shutil
 import sys
 
 import numpy as np
+from paths import LEROBOT_HOME, OPENPI_ROOT
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--openpi-root", type=Path, default=Path("/tmp/openpi"))
+    parser.add_argument("--openpi-root", type=Path, default=OPENPI_ROOT)
     parser.add_argument("--staged-dir", type=Path, required=True)
-    parser.add_argument("--dataset-home", type=Path, default=Path("/work/PARC2026_data/lerobot"))
+    parser.add_argument("--dataset-home", type=Path, default=LEROBOT_HOME)
     parser.add_argument("--repo-id", default="local/libero_plus_openpi")
     parser.add_argument("--fps", type=int, default=20)
     parser.add_argument("--overwrite", action="store_true")
